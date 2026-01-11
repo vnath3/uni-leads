@@ -42,6 +42,13 @@ const renderTemplate = (template: string, data: Record<string, string>) => {
   return result;
 };
 
+const asSummaryObject = (value: unknown) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as Record<string, unknown>;
+  }
+  return value as Record<string, unknown>;
+};
+
 serve(async (req) => {
   const supabase = getServiceClient();
   const now = new Date();
@@ -54,66 +61,139 @@ serve(async (req) => {
   const runKey = `pg_monthly_dues:${periodStartDate}`;
   const url = new URL(req.url);
   const forceRun = url.searchParams.get("force") === "1";
+  const dryRun = url.searchParams.get("dry") === "1";
+  const staleCutoff = new Date(now.getTime() - 30 * 60 * 1000);
 
-  const { error: runInsertError } = await supabase.from("job_runs").insert({
-    job: "pg_monthly_dues",
-    run_key: runKey,
-    status: "running"
-  });
-
-  const hasConflict =
-    runInsertError?.code === "23505" ||
-    (runInsertError?.message &&
-      runInsertError.message.toLowerCase().includes("duplicate key value"));
-
-  if (hasConflict) {
-    const { data: existingRun, error: existingError } = await supabase
-      .from("job_runs")
-      .select("status")
-      .eq("job", "pg_monthly_dues")
-      .eq("run_key", runKey)
-      .maybeSingle();
-
-    if (existingError) {
-      return new Response(
-        JSON.stringify({ ok: false, error: existingError.message }),
-        { status: 500 }
-      );
+  const { data: lockGranted, error: lockError } = await supabase.rpc(
+    "try_job_lock",
+    {
+      p_job: "pg_monthly_dues",
+      p_run_key: runKey
     }
+  );
 
-    if (!forceRun && existingRun?.status !== "failed") {
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          skipped: true,
-          run_key: runKey,
-          status: existingRun?.status ?? "unknown"
-        }),
-        { status: 200 }
-      );
-    }
-
-    const { error: restartError } = await supabase
-      .from("job_runs")
-      .update({
-        status: "running",
-        started_at: now.toISOString(),
-        finished_at: null,
-        summary: {}
-      })
-      .eq("job", "pg_monthly_dues")
-      .eq("run_key", runKey);
-
-    if (restartError) {
-      return new Response(
-        JSON.stringify({ ok: false, error: restartError.message }),
-        { status: 500 }
-      );
-    }
-  } else if (runInsertError) {
-    return new Response(JSON.stringify({ ok: false, error: runInsertError.message }), {
+  if (lockError) {
+    return new Response(JSON.stringify({ ok: false, error: lockError.message }), {
       status: 500
     });
+  }
+
+  if (!lockGranted) {
+    return new Response(
+      JSON.stringify({ ok: true, skipped: "already_running", run_key: runKey }),
+      { status: 200 }
+    );
+  }
+
+  let summaryMeta: Record<string, unknown> = {};
+  if (!dryRun) {
+    const { error: runInsertError } = await supabase.from("job_runs").insert({
+      job: "pg_monthly_dues",
+      run_key: runKey,
+      status: "running"
+    });
+
+    const hasConflict =
+      runInsertError?.code === "23505" ||
+      (runInsertError?.message &&
+        runInsertError.message.toLowerCase().includes("duplicate key value"));
+
+    if (hasConflict) {
+      const { data: existingRun, error: existingError } = await supabase
+        .from("job_runs")
+        .select("status, started_at, summary")
+        .eq("job", "pg_monthly_dues")
+        .eq("run_key", runKey)
+        .maybeSingle();
+
+      if (existingError) {
+        return new Response(
+          JSON.stringify({ ok: false, error: existingError.message }),
+          { status: 500 }
+        );
+      }
+
+      if (!existingRun) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Failed to load existing run state." }),
+          { status: 500 }
+        );
+      }
+
+      let existingSummary = asSummaryObject(existingRun.summary);
+      if (existingRun.status === "running" && existingRun.started_at) {
+        const startedAt = new Date(existingRun.started_at);
+        if (startedAt.getTime() < staleCutoff.getTime()) {
+          existingSummary = {
+            ...existingSummary,
+            note: "auto_recovered_stuck_run",
+            auto_recovered_at: now.toISOString()
+          };
+          const { error: recoveryError } = await supabase
+            .from("job_runs")
+            .update({
+              status: "failed",
+              finished_at: now.toISOString(),
+              summary: existingSummary
+            })
+            .eq("job", "pg_monthly_dues")
+            .eq("run_key", runKey);
+
+          if (recoveryError) {
+            return new Response(
+              JSON.stringify({ ok: false, error: recoveryError.message }),
+              { status: 500 }
+            );
+          }
+          existingRun.status = "failed";
+        }
+      }
+
+      if (!forceRun && existingRun.status !== "failed") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            skipped: true,
+            run_key: runKey,
+            status: existingRun.status ?? "unknown"
+          }),
+          { status: 200 }
+        );
+      }
+
+      if (forceRun) {
+        const rerunCount = Number(existingSummary.rerun_count ?? 0) + 1;
+        existingSummary = {
+          ...existingSummary,
+          rerun_count: rerunCount,
+          last_rerun_at: now.toISOString()
+        };
+      }
+
+      summaryMeta = existingSummary;
+      const { error: restartError } = await supabase
+        .from("job_runs")
+        .update({
+          status: "running",
+          started_at: now.toISOString(),
+          finished_at: null,
+          summary: summaryMeta
+        })
+        .eq("job", "pg_monthly_dues")
+        .eq("run_key", runKey);
+
+      if (restartError) {
+        return new Response(
+          JSON.stringify({ ok: false, error: restartError.message }),
+          { status: 500 }
+        );
+      }
+    } else if (runInsertError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: runInsertError.message }),
+        { status: 500 }
+      );
+    }
   }
 
   const summary = {
@@ -126,6 +206,7 @@ serve(async (req) => {
   };
 
   try {
+    const dryPreview: Array<Record<string, unknown>> = [];
     const { data: rules, error: rulesError } = await supabase
       .from("automation_rules")
       .select("tenant_id, config")
@@ -193,70 +274,59 @@ serve(async (req) => {
       const dueDay = Number.isFinite(dueDayRaw) ? clampNumber(dueDayRaw, 1, 28) : 5;
       const dueDate = toDateString(new Date(Date.UTC(year, month, dueDay)));
 
-      for (const occupancy of (occupancies as Occupancy[]) ?? []) {
+      const occupancyList = (occupancies as Occupancy[]) ?? [];
+      const candidates = occupancyList.filter((occupancy) => {
+        const amountDue = Number(occupancy.monthly_rent ?? 0);
+        return amountDue > 0;
+      });
+
+      let existingPayments = new Map<string, string>();
+      let existingOutbox = new Set<string>();
+      if (dryRun && candidates.length) {
+        const occupancyIds = candidates.map((occupancy) => occupancy.id);
+        const outboxKeys = candidates.map(
+          (occupancy) => `pg_due:${occupancy.id}:${periodStartDate}`
+        );
+
+        const { data: paymentRows, error: paymentCheckError } = await supabase
+          .from("pg_payments")
+          .select("id, occupancy_id")
+          .eq("tenant_id", tenantId)
+          .eq("period_start", periodStartDate)
+          .is("deleted_at", null)
+          .in("occupancy_id", occupancyIds);
+
+        if (paymentCheckError) {
+          summary.errors.push(
+            `Payment check for ${tenantId}: ${paymentCheckError.message}`
+          );
+        } else {
+          existingPayments = new Map(
+            (paymentRows ?? []).map((row) => [row.occupancy_id, row.id])
+          );
+        }
+
+        const { data: outboxRows, error: outboxCheckError } = await supabase
+          .from("message_outbox")
+          .select("id, idempotency_key")
+          .eq("tenant_id", tenantId)
+          .is("deleted_at", null)
+          .in("idempotency_key", outboxKeys);
+
+        if (outboxCheckError) {
+          summary.errors.push(
+            `Outbox check for ${tenantId}: ${outboxCheckError.message}`
+          );
+        } else {
+          existingOutbox = new Set((outboxRows ?? []).map((row) => row.idempotency_key));
+        }
+      }
+
+      for (const occupancy of occupancyList) {
         const amountDue = Number(occupancy.monthly_rent ?? 0);
         if (!amountDue || amountDue <= 0) {
           summary.dues_skipped += 1;
           continue;
-        }
-
-        const paymentPayload = {
-          tenant_id: tenantId,
-          occupancy_id: occupancy.id,
-          contact_id: occupancy.contact_id,
-          period_start: periodStartDate,
-          period_end: periodEndDate,
-          due_date: dueDate,
-          amount_due: amountDue,
-          amount_paid: 0,
-          status: "due",
-          metadata: {
-            generated_by: "automation",
-            job: "pg_monthly_dues"
-          }
-        };
-
-        let paymentId: string | null = null;
-        const { data: paymentRows, error: paymentError } = await supabase
-          .from("pg_payments")
-          .insert([paymentPayload])
-          .select("id");
-
-        if (paymentError) {
-          const isDuplicate =
-            paymentError.code === "23505" ||
-            paymentError.message?.toLowerCase().includes("duplicate key value");
-          if (!isDuplicate) {
-            summary.errors.push(`Payment for ${occupancy.id}: ${paymentError.message}`);
-            continue;
-          }
-
-          summary.dues_skipped += 1;
-          const { data: existingPayment, error: existingPaymentError } =
-            await supabase
-              .from("pg_payments")
-              .select("id")
-              .eq("tenant_id", tenantId)
-              .eq("occupancy_id", occupancy.id)
-              .eq("period_start", periodStartDate)
-              .is("deleted_at", null)
-              .maybeSingle();
-
-          if (existingPaymentError) {
-            summary.errors.push(
-              `Payment lookup for ${occupancy.id}: ${existingPaymentError.message}`
-            );
-            continue;
-          }
-
-          paymentId = existingPayment?.id ?? null;
-        } else {
-          paymentId = paymentRows?.[0]?.id ?? null;
-          if (paymentId) {
-            summary.dues_created += 1;
-          } else {
-            summary.dues_skipped += 1;
-          }
         }
 
         const contact = Array.isArray(occupancy.contacts)
@@ -280,79 +350,132 @@ serve(async (req) => {
           ? renderTemplate(subjectTemplate, variables)
           : null;
 
-        const outboxPayload = {
-          tenant_id: tenantId,
-          channel: "internal",
-          status: "queued",
-          scheduled_at: now.toISOString(),
-          contact_id: occupancy.contact_id,
-          to_phone: contact?.phone ?? null,
-          to_email: contact?.email ?? null,
-          template_key: template?.key ?? null,
-          subject,
-          body,
-          related_table: "pg_payments",
-          related_id: paymentId,
-          idempotency_key: `pg_due:${occupancy.id}:${periodStartDate}`,
-          meta: {
-            job: "pg_monthly_dues",
-            occupancy_id: occupancy.id,
-            period_start: periodStartDate
-          }
-        };
+        const idempotencyKey = `pg_due:${occupancy.id}:${periodStartDate}`;
 
-        const { data: outboxRows, error: outboxError } = await supabase
-          .from("message_outbox")
-          .insert([outboxPayload])
-          .select("id");
-
-        if (outboxError) {
-          const isDuplicate =
-            outboxError.code === "23505" ||
-            outboxError.message?.toLowerCase().includes("duplicate key value");
-          if (!isDuplicate) {
-            summary.errors.push(`Outbox for ${occupancy.id}: ${outboxError.message}`);
-            continue;
+        if (dryRun) {
+          const paymentExists = existingPayments.has(occupancy.id);
+          const outboxExists = existingOutbox.has(idempotencyKey);
+          if (!paymentExists) {
+            summary.dues_created += 1;
+          } else {
+            summary.dues_skipped += 1;
           }
-          summary.outbox_skipped += 1;
-        } else if (outboxRows?.length) {
+          if (!outboxExists) {
+            summary.outbox_created += 1;
+          } else {
+            summary.outbox_skipped += 1;
+          }
+          if (dryPreview.length < 25) {
+            dryPreview.push({
+              tenant_id: tenantId,
+              occupancy_id: occupancy.id,
+              amount_due: amountDue,
+              due_date: dueDate,
+              payment_exists: paymentExists,
+              outbox_exists: outboxExists
+            });
+          }
+          continue;
+        }
+
+        const { data: resultRows, error: resultError } = await supabase.rpc(
+          "create_pg_due_and_outbox",
+          {
+            p_tenant_id: tenantId,
+            p_occupancy_id: occupancy.id,
+            p_contact_id: occupancy.contact_id,
+            p_period_start: periodStartDate,
+            p_period_end: periodEndDate,
+            p_due_date: dueDate,
+            p_amount_due: amountDue,
+            p_amount_paid: 0,
+            p_status: "due",
+            p_payment_meta: {
+              generated_by: "automation",
+              job: "pg_monthly_dues"
+            },
+            p_scheduled_at: now.toISOString(),
+            p_template_key: template?.key ?? null,
+            p_subject: subject,
+            p_body: body,
+            p_to_phone: contact?.phone ?? null,
+            p_to_email: contact?.email ?? null,
+            p_outbox_idempotency_key: idempotencyKey,
+            p_outbox_meta: {
+              job: "pg_monthly_dues",
+              occupancy_id: occupancy.id,
+              period_start: periodStartDate
+            }
+          }
+        );
+
+        if (resultError) {
+          summary.errors.push(`Payment for ${occupancy.id}: ${resultError.message}`);
+          continue;
+        }
+
+        const result = Array.isArray(resultRows) ? resultRows[0] : resultRows;
+        if (!result?.payment_id) {
+          summary.errors.push(`Payment for ${occupancy.id}: missing payment id`);
+          continue;
+        }
+
+        if (result.payment_created) {
+          summary.dues_created += 1;
+        } else {
+          summary.dues_skipped += 1;
+        }
+
+        if (result.outbox_created) {
           summary.outbox_created += 1;
         } else {
           summary.outbox_skipped += 1;
         }
       }
 
-      await supabase
-        .from("automation_rules")
-        .update({ last_run_at: now.toISOString() })
-        .eq("tenant_id", tenantId)
-        .eq("job", "pg_monthly_dues");
+      if (!dryRun) {
+        await supabase
+          .from("automation_rules")
+          .update({ last_run_at: now.toISOString() })
+          .eq("tenant_id", tenantId)
+          .eq("job", "pg_monthly_dues");
+      }
     }
 
-    await supabase
-      .from("job_runs")
-      .update({
-        finished_at: new Date().toISOString(),
-        status: "success",
-        summary
-      })
-      .eq("job", "pg_monthly_dues")
-      .eq("run_key", runKey);
+    const finalSummary = {
+      ...summaryMeta,
+      ...summary,
+      ...(dryRun ? { dry_run: true, preview: dryPreview } : {})
+    };
 
-    return new Response(JSON.stringify({ ok: true, run_key: runKey, summary }), {
+    if (!dryRun) {
+      await supabase
+        .from("job_runs")
+        .update({
+          finished_at: new Date().toISOString(),
+          status: "success",
+          summary: finalSummary
+        })
+        .eq("job", "pg_monthly_dues")
+        .eq("run_key", runKey);
+    }
+
+    return new Response(JSON.stringify({ ok: true, run_key: runKey, summary: finalSummary }), {
       status: 200
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    await supabase
-      .from("job_runs")
-      .update({
-        finished_at: new Date().toISOString(),
-        status: "failed",
-        summary: { error: message }
-      })
-      .eq("job", "pg_monthly_dues")
-      .eq("run_key", runKey);
+    if (!dryRun) {
+      await supabase
+        .from("job_runs")
+        .update({
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          summary: { ...summaryMeta, error: message }
+        })
+        .eq("job", "pg_monthly_dues")
+        .eq("run_key", runKey);
+    }
 
     return new Response(JSON.stringify({ ok: false, error: message }), {
       status: 500
