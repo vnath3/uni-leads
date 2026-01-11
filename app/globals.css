@@ -442,6 +442,133 @@ textarea {
   z-index: 30;
 }
 
+.super-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(6px);
+  margin-bottom: 24px;
+}
+
+.super-header-left h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.super-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.super-search {
+  max-width: 320px;
+}
+
+.super-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tenant-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tenant-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tenant-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(31, 26, 20, 0.08);
+  color: var(--ink);
+}
+
+.status-badge.active {
+  background: rgba(60, 140, 93, 0.16);
+  color: #2f6b4a;
+}
+
+.status-badge.paused,
+.status-badge.archived {
+  background: rgba(182, 90, 60, 0.14);
+  color: var(--accent-dark);
+}
+
+.feature-sections {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.feature-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #faf7f2;
+}
+
+.feature-section-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 26, 20, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.modal {
+  width: min(520px, 100%);
+  background: var(--card);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
 @keyframes rise {
   from {
     transform: translateY(10px);
@@ -505,5 +632,15 @@ textarea {
     position: static;
     box-shadow: none;
     border-radius: 10px;
+  }
+
+  .super-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .super-header-center {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

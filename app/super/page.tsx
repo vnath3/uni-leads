@@ -142,6 +142,19 @@ export default function SuperDashboardPage() {
     Record<string, { mode: "RO" | "RW"; expiresAt: string }>
   >({});
   const [toggleBusy, setToggleBusy] = useState<Record<string, boolean>>({});
+  const [supportBusy, setSupportBusy] = useState<Record<string, boolean>>({});
+  const [copyMessageByTenant, setCopyMessageByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showCreateTenant, setShowCreateTenant] = useState(false);
+  const [creatingTenant, setCreatingTenant] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    slug: "",
+    ownerEmail: "",
+    preset: "pg"
+  });
 
   const featureMetaByKey = useMemo(() => {
     const map: Record<
@@ -177,6 +190,26 @@ export default function SuperDashboardPage() {
     }
     return map;
   }, [tenantFeatures]);
+
+  const filteredTenants = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return tenants;
+    return tenants.filter((tenant) => {
+      const slug = slugByTenant[tenant.id] ?? "";
+      return (
+        tenant.name.toLowerCase().includes(term) ||
+        slug.toLowerCase().includes(term)
+      );
+    });
+  }, [tenants, slugByTenant, searchTerm]);
+
+  const featureSections = useMemo(() => {
+    return [
+      { title: "Core", keys: ["landing", "leads", "contacts", "audit"] },
+      { title: "PG", keys: ["pg.beds", "pg.occupancy", "pg.payments"] },
+      { title: "Clinic", keys: ["clinic.appointments"] }
+    ];
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -329,6 +362,183 @@ export default function SuperDashboardPage() {
     router.replace("/login");
   };
 
+  const handleCopyLink = async (tenantId: string, label: string, path: string) => {
+    try {
+      const url = new URL(path, window.location.origin).toString();
+      await navigator.clipboard.writeText(url);
+      setCopyMessageByTenant((prev) => ({
+        ...prev,
+        [tenantId]: `${label} copied`
+      }));
+      setTimeout(() => {
+        setCopyMessageByTenant((prev) => {
+          const next = { ...prev };
+          delete next[tenantId];
+          return next;
+        });
+      }, 2000);
+    } catch (copyError) {
+      setCopyMessageByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Copy failed"
+      }));
+    }
+  };
+
+  const handleSupportRequest = async (tenantId: string, mode: "RO" | "RW") => {
+    const currentUserId = session?.user.id;
+    if (!currentUserId) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const key = `${tenantId}:${mode}`;
+    setSupportBusy((prev) => ({ ...prev, [key]: true }));
+    setError(null);
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const { error: grantError } = await supabase
+      .from("support_access_grants")
+      .insert({
+        tenant_id: tenantId,
+        platform_user_id: currentUserId,
+        access_mode: mode.toLowerCase(),
+        status: "active",
+        created_by: currentUserId,
+        expires_at: expiresAt
+      });
+
+    if (grantError) {
+      setError(grantError.message);
+      setSupportBusy((prev) => ({ ...prev, [key]: false }));
+      return;
+    }
+
+    setSupportAccess((prev) => ({
+      ...prev,
+      [tenantId]: { mode, expiresAt }
+    }));
+    setSupportBusy((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const handleSupportRevoke = async (tenantId: string) => {
+    const currentUserId = session?.user.id;
+    if (!currentUserId) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const key = `${tenantId}:revoke`;
+    setSupportBusy((prev) => ({ ...prev, [key]: true }));
+    setError(null);
+
+    const { error: revokeError } = await supabase
+      .from("support_access_grants")
+      .update({
+        status: "revoked",
+        revoked_at: new Date().toISOString(),
+        revoked_by: currentUserId
+      })
+      .eq("tenant_id", tenantId)
+      .eq("platform_user_id", currentUserId)
+      .eq("status", "active");
+
+    if (revokeError) {
+      setError(revokeError.message);
+      setSupportBusy((prev) => ({ ...prev, [key]: false }));
+      return;
+    }
+
+    setSupportAccess((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+    setSupportBusy((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const handleCreateTenant = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const currentUserId = session?.user.id;
+    if (!currentUserId) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const name = createForm.name.trim();
+    const slug = createForm.slug.trim().toLowerCase();
+    if (!name || !slug) {
+      setError("Tenant name and slug are required.");
+      return;
+    }
+
+    setCreatingTenant(true);
+    setError(null);
+
+    const { data: tenantRow, error: tenantError } = await supabase
+      .from("tenants")
+      .insert({ name, status: "active" })
+      .select("id, name, status, created_at")
+      .single();
+
+    if (tenantError) {
+      setError(tenantError.message);
+      setCreatingTenant(false);
+      return;
+    }
+
+    const { error: slugError } = await supabase.from("tenant_identities").insert({
+      tenant_id: tenantRow.id,
+      identity_type: "slug",
+      value: slug,
+      is_primary: true
+    });
+
+    if (slugError) {
+      setError(slugError.message);
+      setCreatingTenant(false);
+      return;
+    }
+
+    const presetKeys =
+      createForm.preset === "clinic"
+        ? ["landing", "leads", "contacts", "audit", "clinic.appointments"]
+        : ["landing", "leads", "contacts", "audit", "pg.beds", "pg.payments"];
+
+    const keysToEnable = presetKeys.filter((key) =>
+      features.some((feature) => feature.key === key)
+    );
+
+    if (keysToEnable.length) {
+      const nowIso = new Date().toISOString();
+      const rows = keysToEnable.map((featureKey) => ({
+        tenant_id: tenantRow.id,
+        feature_key: featureKey,
+        enabled: true,
+        enabled_by: currentUserId,
+        enabled_at: nowIso,
+        disabled_at: null
+      }));
+      const { error: featureError } = await supabase
+        .from("tenant_features")
+        .insert(rows);
+
+      if (featureError) {
+        setError(featureError.message);
+        setCreatingTenant(false);
+        return;
+      }
+    }
+
+    setTenants((prev) => [tenantRow as Tenant, ...prev]);
+    setSlugByTenant((prev) => ({ ...prev, [tenantRow.id]: slug }));
+    setShowCreateTenant(false);
+    setCreateForm({ name: "", slug: "", ownerEmail: "", preset: "pg" });
+    setCreatingTenant(false);
+    await loadData(session);
+  };
+
   const handleToggle = async (
     tenantId: string,
     featureKey: string,
@@ -405,32 +615,40 @@ export default function SuperDashboardPage() {
 
   return (
     <>
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h1>Super Admin Dashboard</h1>
-            <p className="muted">
-              Signed in as {session?.user.email ?? session?.user.id}
-            </p>
-          </div>
+      <div className="super-header">
+        <div className="super-header-left">
+          <h1>FlowGrid Super Admin</h1>
+        </div>
+        <div className="super-header-center">
+          <input
+            className="super-search"
+            type="search"
+            placeholder="Search tenant name or slug"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+        </div>
+        <div className="super-header-right">
+          <button
+            className="button secondary"
+            onClick={() => setShowCreateTenant(true)}
+          >
+            Create Tenant
+          </button>
+          <span className="muted">{session?.user.email ?? session?.user.id}</span>
           <button className="button secondary" onClick={handleSignOut}>
             Sign out
           </button>
-        </div>
-        <div className="notice">
-          Platform access is granted only for users in
-          <strong> public.platform_users</strong> with
-          <strong> is_active</strong> set to true.
         </div>
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {tenants.length === 0 && (
+      {filteredTenants.length === 0 && (
         <div className="notice">No tenants found in the database.</div>
       )}
 
-      {tenants.map((tenant, index) => {
+      {filteredTenants.map((tenant, index) => {
         const slug = slugByTenant[tenant.id];
         const enabledFeatures = tenantFeatures
           .filter((row) => row.tenant_id === tenant.id && row.enabled)
@@ -442,33 +660,62 @@ export default function SuperDashboardPage() {
           });
         const supportStatus = supportAccess[tenant.id];
 
+        const statusLabel = (tenant.status ?? "unknown").toLowerCase();
+        const statusBadgeClass = `status-badge ${statusLabel}`;
+
         return (
           <div
             className="card"
             key={tenant.id}
             style={{ animationDelay: `${index * 0.03}s` }}
           >
-            <div className="card-header">
+            <div className="tenant-header">
               <div>
                 <h2>{tenant.name}</h2>
-                <p className="muted">
-                  Status: {tenant.status ?? "unknown"} | Created:{" "}
-                  {formatDate(tenant.created_at)}
-                </p>
-                <p className="muted">Slug: {slug ?? "missing"}</p>
-              </div>
-              {slug ? (
-                <div>
-                  <Link className="button" href={`/t/${slug}/admin`}>
-                    Open Tenant Admin
-                  </Link>
-                  <Link className="button secondary" href={`/t/${slug}`}>
-                    Open Tenant Landing
-                  </Link>
+                <div className="tenant-meta">
+                  <span className={statusBadgeClass}>
+                    {tenant.status ?? "unknown"}
+                  </span>
+                  <span className="muted">Slug: {slug ?? "missing"}</span>
                 </div>
-              ) : (
-                <span className="button disabled">Missing slug</span>
-              )}
+              </div>
+              <div className="tenant-actions">
+                {slug ? (
+                  <>
+                    <Link className="button" href={`/t/${slug}/admin`}>
+                      Open Admin
+                    </Link>
+                    <Link className="button secondary" href={`/t/${slug}`}>
+                      Open Landing
+                    </Link>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() =>
+                        handleCopyLink(tenant.id, "Admin link", `/t/${slug}/admin`)
+                      }
+                    >
+                      Copy Admin
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() =>
+                        handleCopyLink(tenant.id, "Landing link", `/t/${slug}`)
+                      }
+                    >
+                      Copy Landing
+                    </button>
+                    {copyMessageByTenant[tenant.id] && (
+                      <span className="muted">
+                        {copyMessageByTenant[tenant.id]}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="button disabled">Missing slug</span>
+                )}
+              </div>
             </div>
 
             <div className="section">
@@ -491,27 +738,41 @@ export default function SuperDashboardPage() {
               {features.length === 0 ? (
                 <p className="muted">No features configured.</p>
               ) : (
-                <div className="toggle-grid">
-                  {features.map((feature) => {
-                    const enabled = !!tenantFeatureMap[tenant.id]?.[feature.key];
-                    const key = `${tenant.id}:${feature.key}`;
-                    const busy = !!toggleBusy[key];
+                <div className="feature-sections">
+                  {featureSections.map((section) => {
+                    const sectionFeatures = features.filter((feature) =>
+                      section.keys.includes(feature.key)
+                    );
+                    if (!sectionFeatures.length) return null;
 
                     return (
-                      <label
-                        key={feature.key}
-                        className={`toggle ${busy ? "disabled" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          disabled={busy}
-                          onChange={() =>
-                            handleToggle(tenant.id, feature.key, !enabled)
-                          }
-                        />
-                        <span>{feature.name}</span>
-                      </label>
+                      <div className="feature-section" key={section.title}>
+                        <div className="feature-section-title">{section.title}</div>
+                        <div className="toggle-list">
+                          {sectionFeatures.map((feature) => {
+                            const enabled = !!tenantFeatureMap[tenant.id]?.[feature.key];
+                            const key = `${tenant.id}:${feature.key}`;
+                            const busy = !!toggleBusy[key];
+
+                            return (
+                              <label
+                                key={feature.key}
+                                className={`toggle ${busy ? "disabled" : ""}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  disabled={busy}
+                                  onChange={() =>
+                                    handleToggle(tenant.id, feature.key, !enabled)
+                                  }
+                                />
+                                <span>{feature.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -522,16 +783,125 @@ export default function SuperDashboardPage() {
               <div className="section-title">Support access</div>
               {supportStatus ? (
                 <p className="muted">
-                  Support Access: {supportStatus.mode} until{" "}
+                  Current grant: {supportStatus.mode} until{" "}
                   {formatDateTime(supportStatus.expiresAt)}
                 </p>
               ) : (
-                <p className="muted">Support Access: None</p>
+                <p className="muted">Current grant: None</p>
               )}
+              <p className="muted">Support requires tenant grant.</p>
+              <div className="tag-list">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={!!supportBusy[`${tenant.id}:RO`]}
+                  onClick={() => handleSupportRequest(tenant.id, "RO")}
+                >
+                  Request RO
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={!!supportBusy[`${tenant.id}:RW`]}
+                  onClick={() => handleSupportRequest(tenant.id, "RW")}
+                >
+                  Request RW
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={!!supportBusy[`${tenant.id}:revoke`]}
+                  onClick={() => handleSupportRevoke(tenant.id)}
+                >
+                  Revoke
+                </button>
+              </div>
             </div>
           </div>
         );
       })}
+
+      {showCreateTenant && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="card-header">
+              <div>
+                <h2>Create Tenant</h2>
+                <p className="muted">Add a new tenant with defaults.</p>
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => setShowCreateTenant(false)}
+              >
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleCreateTenant}>
+              <label className="field">
+                <span>Tenant name</span>
+                <input
+                  type="text"
+                  value={createForm.name}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      name: event.target.value
+                    }))
+                  }
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Slug</span>
+                <input
+                  type="text"
+                  value={createForm.slug}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      slug: event.target.value
+                    }))
+                  }
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Owner email (optional)</span>
+                <input
+                  type="email"
+                  value={createForm.ownerEmail}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      ownerEmail: event.target.value
+                    }))
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="field">
+                <span>Default feature preset</span>
+                <select
+                  value={createForm.preset}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      preset: event.target.value
+                    }))
+                  }
+                >
+                  <option value="pg">PG</option>
+                  <option value="clinic">Clinic</option>
+                </select>
+              </label>
+              <button className="button" type="submit" disabled={creatingTenant}>
+                {creatingTenant ? "Creating..." : "Create tenant"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }
