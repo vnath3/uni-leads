@@ -60,8 +60,8 @@ serve(async (req) => {
   const periodEndDate = toDateString(periodEnd);
   const runKey = `pg_monthly_dues:${periodStartDate}`;
   const url = new URL(req.url);
-  const forceRun = url.searchParams.get("force") === "1";
-  const dryRun = url.searchParams.get("dry") === "1";
+  const force = url.searchParams.get("force") === "1";
+  const dry = url.searchParams.get("dry") === "1";
   const staleCutoff = new Date(now.getTime() - 30 * 60 * 1000);
 
   const { data: lockGranted, error: lockError } = await supabase.rpc(
@@ -80,13 +80,29 @@ serve(async (req) => {
 
   if (!lockGranted) {
     return new Response(
-      JSON.stringify({ ok: true, skipped: "already_running", run_key: runKey }),
+      JSON.stringify({
+        ok: true,
+        skipped: true,
+        run_key: runKey,
+        summary: {
+          skipped_reason: "already_running",
+          occupancies_seen: 0,
+          payments_created: 0,
+          payments_conflict_existing: 0,
+          outbox_created: 0,
+          outbox_conflict_existing: 0,
+          meta: {
+            force,
+            dry
+          }
+        }
+      }),
       { status: 200 }
     );
   }
 
   let summaryMeta: Record<string, unknown> = {};
-  if (!dryRun) {
+  if (!dry) {
     const { error: runInsertError } = await supabase.from("job_runs").insert({
       job: "pg_monthly_dues",
       run_key: runKey,
@@ -149,19 +165,55 @@ serve(async (req) => {
         }
       }
 
-      if (!forceRun && existingRun.status !== "failed") {
+      if (existingRun.status === "success" && !force) {
         return new Response(
           JSON.stringify({
             ok: true,
             skipped: true,
             run_key: runKey,
-            status: existingRun.status ?? "unknown"
+            status: existingRun.status ?? "unknown",
+            summary: {
+              skipped_reason: "job_runs_success",
+              occupancies_seen: 0,
+              payments_created: 0,
+              payments_conflict_existing: 0,
+              outbox_created: 0,
+              outbox_conflict_existing: 0,
+              meta: {
+                force,
+                dry
+              }
+            }
           }),
           { status: 200 }
         );
       }
 
-      if (forceRun) {
+      if (existingRun.status === "running" && !force) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            skipped: true,
+            run_key: runKey,
+            status: existingRun.status ?? "unknown",
+            summary: {
+              skipped_reason: "job_runs_running",
+              occupancies_seen: 0,
+              payments_created: 0,
+              payments_conflict_existing: 0,
+              outbox_created: 0,
+              outbox_conflict_existing: 0,
+              meta: {
+                force,
+                dry
+              }
+            }
+          }),
+          { status: 200 }
+        );
+      }
+
+      if (force) {
         const rerunCount = Number(existingSummary.rerun_count ?? 0) + 1;
         existingSummary = {
           ...existingSummary,
@@ -198,11 +250,16 @@ serve(async (req) => {
 
   const summary = {
     tenants_processed: 0,
+    occupancies_seen: 0,
+    payments_created: 0,
+    payments_conflict_existing: 0,
     dues_created: 0,
     dues_skipped: 0,
     outbox_created: 0,
+    outbox_conflict_existing: 0,
     outbox_skipped: 0,
-    errors: [] as string[]
+    errors: [] as string[],
+    skipped_reason: null as string | null
   };
 
   try {
@@ -275,6 +332,7 @@ serve(async (req) => {
       const dueDate = toDateString(new Date(Date.UTC(year, month, dueDay)));
 
       const occupancyList = (occupancies as Occupancy[]) ?? [];
+      summary.occupancies_seen += occupancyList.length;
       const candidates = occupancyList.filter((occupancy) => {
         const amountDue = Number(occupancy.monthly_rent ?? 0);
         return amountDue > 0;
@@ -282,7 +340,7 @@ serve(async (req) => {
 
       let existingPayments = new Map<string, string>();
       let existingOutbox = new Set<string>();
-      if (dryRun && candidates.length) {
+      if (dry && candidates.length) {
         const occupancyIds = candidates.map((occupancy) => occupancy.id);
         const outboxKeys = candidates.map(
           (occupancy) => `pg_due:${occupancy.id}:${periodStartDate}`
@@ -352,17 +410,20 @@ serve(async (req) => {
 
         const idempotencyKey = `pg_due:${occupancy.id}:${periodStartDate}`;
 
-        if (dryRun) {
+        if (dry) {
           const paymentExists = existingPayments.has(occupancy.id);
           const outboxExists = existingOutbox.has(idempotencyKey);
           if (!paymentExists) {
+            summary.payments_created += 1;
             summary.dues_created += 1;
           } else {
+            summary.payments_conflict_existing += 1;
             summary.dues_skipped += 1;
           }
           if (!outboxExists) {
             summary.outbox_created += 1;
           } else {
+            summary.outbox_conflict_existing += 1;
             summary.outbox_skipped += 1;
           }
           if (dryPreview.length < 25) {
@@ -421,19 +482,22 @@ serve(async (req) => {
         }
 
         if (result.payment_created) {
+          summary.payments_created += 1;
           summary.dues_created += 1;
         } else {
+          summary.payments_conflict_existing += 1;
           summary.dues_skipped += 1;
         }
 
         if (result.outbox_created) {
           summary.outbox_created += 1;
         } else {
+          summary.outbox_conflict_existing += 1;
           summary.outbox_skipped += 1;
         }
       }
 
-      if (!dryRun) {
+      if (!dry) {
         await supabase
           .from("automation_rules")
           .update({ last_run_at: now.toISOString() })
@@ -442,13 +506,21 @@ serve(async (req) => {
       }
     }
 
+    const meta = {
+      ...(typeof summaryMeta.meta === "object" && summaryMeta.meta !== null
+        ? (summaryMeta.meta as Record<string, unknown>)
+        : {}),
+      force,
+      dry
+    };
     const finalSummary = {
       ...summaryMeta,
       ...summary,
-      ...(dryRun ? { dry_run: true, preview: dryPreview } : {})
+      ...(dry ? { dry_run: true, preview: dryPreview } : {}),
+      meta
     };
 
-    if (!dryRun) {
+    if (!dry) {
       await supabase
         .from("job_runs")
         .update({
@@ -460,12 +532,13 @@ serve(async (req) => {
         .eq("run_key", runKey);
     }
 
-    return new Response(JSON.stringify({ ok: true, run_key: runKey, summary: finalSummary }), {
-      status: 200
-    });
+    return new Response(
+      JSON.stringify({ ok: true, skipped: false, run_key: runKey, summary: finalSummary }),
+      { status: 200 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    if (!dryRun) {
+    if (!dry) {
       await supabase
         .from("job_runs")
         .update({
