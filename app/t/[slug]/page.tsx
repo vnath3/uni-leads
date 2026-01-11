@@ -124,45 +124,37 @@ export default function TenantLandingPage({
       move_in_month: formState.moveInMonth || null
     };
 
-    const { data, error: submitError } = await supabase
-      .schema("public")
-      .rpc("submit_lead", {
-        p_identity_type: "slug",
-        p_identity_value: params.slug,
-        p_contact: contact,
-        p_form_payload: payload,
-        p_source: "landing",
-        p_campaign: resolveCampaign(settings)
-      });
+    const response = await fetch("/api/lead-submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: params.slug,
+        contact,
+        form_payload: payload,
+        source: "landing",
+        campaign: resolveCampaign(settings)
+      })
+    });
 
-    if (submitError) {
-      const message = submitError.message.toLowerCase();
+    const responseBody = (await response.json()) as {
+      lead_id?: string;
+      error?: string;
+    };
+
+    if (!response.ok || responseBody.error) {
+      const message = responseBody.error?.toLowerCase() ?? "Submission failed.";
       if (message.includes("tenant inactive")) {
         setError("This business is currently unavailable.");
       } else if (message.includes("rate limit")) {
         setError("Too many submissions. Please try again shortly.");
       } else {
-        setError(submitError.message);
+        setError(responseBody.error ?? "Submission failed.");
       }
       setSubmitting(false);
       return;
     }
 
-    const leadIdValue =
-      typeof data === "string" || typeof data === "number"
-        ? data
-        : (data as { lead_id?: string | number; id?: string | number } | null)
-            ?.lead_id ??
-          (data as { lead_id?: string | number; id?: string | number } | null)
-            ?.id;
-
-    if (leadIdValue) {
-      void supabase.functions
-        .invoke("run-lead-instant-message", {
-          body: { lead_id: String(leadIdValue), force: false }
-        })
-        .catch(() => null);
-    }
+    const leadIdValue = responseBody.lead_id;
 
     setSuccessId(leadIdValue ? String(leadIdValue) : "submitted");
     setSubmitting(false);
