@@ -47,6 +47,9 @@ export default function OutboxPage() {
   const [items, setItems] = useState<OutboxItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<OutboxStatus | "all">("all");
   const [channelFilter, setChannelFilter] = useState<OutboxChannel | "all">("all");
+  const [relatedFilter, setRelatedFilter] = useState<"all" | "clinic_appointments">(
+    "all"
+  );
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
@@ -105,9 +108,15 @@ export default function OutboxPage() {
       if (channelFilter !== "all" && item.channel !== channelFilter) {
         return false;
       }
+      if (
+        relatedFilter !== "all" &&
+        item.related_table !== relatedFilter
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [items, statusFilter, channelFilter]);
+  }, [items, statusFilter, channelFilter, relatedFilter]);
 
   const updateStatus = async (
     item: OutboxItem,
@@ -191,6 +200,20 @@ export default function OutboxPage() {
               <option value="whatsapp">WhatsApp</option>
               <option value="sms">SMS</option>
               <option value="email">Email</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Related</span>
+            <select
+              value={relatedFilter}
+              onChange={(event) =>
+                setRelatedFilter(
+                  event.target.value as "all" | "clinic_appointments"
+                )
+              }
+            >
+              <option value="all">All</option>
+              <option value="clinic_appointments">Appointments</option>
             </select>
           </label>
         </div>
