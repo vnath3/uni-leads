@@ -156,6 +156,14 @@ export default function TenantLandingPage({
           (data as { lead_id?: string | number; id?: string | number } | null)
             ?.id;
 
+    if (leadIdValue) {
+      void supabase.functions
+        .invoke("run-lead-instant-message", {
+          body: { lead_id: String(leadIdValue), force: false }
+        })
+        .catch(() => null);
+    }
+
     setSuccessId(leadIdValue ? String(leadIdValue) : "submitted");
     setSubmitting(false);
     setFormState({
