@@ -264,16 +264,10 @@ serve(async (req) => {
     const templateCache = new Map<string, Template>();
     const { data: rules, error: rulesError } = await supabase
       .from("automation_rules")
-      .select(
-        "tenant_id, config, tenants!inner(status, deleted_at), tenant_features!inner(feature_key, enabled)"
-      )
+      .select("tenant_id, config")
       .eq("job", "clinic_appt_reminders")
       .eq("is_enabled", true)
-      .is("deleted_at", null)
-      .eq("tenants.status", "active")
-      .is("tenants.deleted_at", null)
-      .eq("tenant_features.feature_key", "clinic.appointments")
-      .eq("tenant_features.enabled", true);
+      .is("deleted_at", null);
 
     if (rulesError) {
       throw rulesError;
@@ -282,6 +276,26 @@ serve(async (req) => {
     for (const rule of (rules as AutomationRule[]) ?? []) {
       summary.tenants_processed += 1;
       const tenantId = rule.tenant_id;
+      const { data: tenantRow } = await supabase
+        .from("tenants")
+        .select("status, deleted_at")
+        .eq("id", tenantId)
+        .maybeSingle();
+
+      if (!tenantRow || tenantRow.deleted_at || tenantRow.status !== "active") {
+        continue;
+      }
+
+      const { data: featureRow } = await supabase
+        .from("tenant_features")
+        .select("enabled")
+        .eq("tenant_id", tenantId)
+        .eq("feature_key", "clinic.appointments")
+        .maybeSingle();
+
+      if (!featureRow?.enabled) {
+        continue;
+      }
       const config = rule.config ?? {};
       const windowHoursRaw = Number(
         (config as { window_hours?: number }).window_hours ?? 24
