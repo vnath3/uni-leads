@@ -232,44 +232,42 @@ serve(async (req) => {
         );
         const scheduledAtValue = sendAt.getTime() < now.getTime() ? now : sendAt;
 
+        const outboxPayload = {
+          tenant_id: tenantId,
+          channel: "internal",
+          status: "queued",
+          scheduled_at: scheduledAtValue.toISOString(),
+          contact_id: appointment.contact_id,
+          to_phone: contact?.phone ?? null,
+          to_email: contact?.email ?? null,
+          template_key: template?.key ?? null,
+          subject,
+          body,
+          related_table: "clinic_appointments",
+          related_id: appointment.id,
+          idempotency_key: `clinic_reminder:${appointment.id}:${bucketKey}`,
+          meta: {
+            job: "clinic_appt_reminders",
+            scheduled_at: appointment.scheduled_at,
+            bucket: bucketKey
+          }
+        };
+
         const { data: outboxRows, error: outboxError } = await supabase
           .from("message_outbox")
-          .upsert(
-            [
-              {
-                tenant_id: tenantId,
-                channel: "internal",
-                status: "queued",
-                scheduled_at: scheduledAtValue.toISOString(),
-                contact_id: appointment.contact_id,
-                to_phone: contact?.phone ?? null,
-                to_email: contact?.email ?? null,
-                template_key: template?.key ?? null,
-                subject,
-                body,
-                related_table: "clinic_appointments",
-                related_id: appointment.id,
-                idempotency_key: `clinic_reminder:${appointment.id}:${bucketKey}`,
-                meta: {
-                  job: "clinic_appt_reminders",
-                  scheduled_at: appointment.scheduled_at,
-                  bucket: bucketKey
-                }
-              }
-            ],
-            {
-              onConflict: "tenant_id,idempotency_key",
-              ignoreDuplicates: true
-            }
-          )
+          .insert([outboxPayload])
           .select("id");
 
         if (outboxError) {
-          summary.errors.push(`Outbox for ${appointment.id}: ${outboxError.message}`);
-          continue;
-        }
-
-        if (outboxRows?.length) {
+          const isDuplicate =
+            outboxError.code === "23505" ||
+            outboxError.message?.toLowerCase().includes("duplicate key value");
+          if (!isDuplicate) {
+            summary.errors.push(`Outbox for ${appointment.id}: ${outboxError.message}`);
+            continue;
+          }
+          summary.reminders_skipped += 1;
+        } else if (outboxRows?.length) {
           summary.reminders_created += 1;
         } else {
           summary.reminders_skipped += 1;

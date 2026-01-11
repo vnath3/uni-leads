@@ -200,43 +200,63 @@ serve(async (req) => {
           continue;
         }
 
+        const paymentPayload = {
+          tenant_id: tenantId,
+          occupancy_id: occupancy.id,
+          contact_id: occupancy.contact_id,
+          period_start: periodStartDate,
+          period_end: periodEndDate,
+          due_date: dueDate,
+          amount_due: amountDue,
+          amount_paid: 0,
+          status: "due",
+          metadata: {
+            generated_by: "automation",
+            job: "pg_monthly_dues"
+          }
+        };
+
+        let paymentId: string | null = null;
         const { data: paymentRows, error: paymentError } = await supabase
           .from("pg_payments")
-          .upsert(
-            [
-              {
-                tenant_id: tenantId,
-                occupancy_id: occupancy.id,
-                contact_id: occupancy.contact_id,
-                period_start: periodStartDate,
-                period_end: periodEndDate,
-                due_date: dueDate,
-                amount_due: amountDue,
-                amount_paid: 0,
-                status: "due",
-                metadata: {
-                  generated_by: "automation",
-                  job: "pg_monthly_dues"
-                }
-              }
-            ],
-            {
-              onConflict: "tenant_id,occupancy_id,period_start",
-              ignoreDuplicates: true
-            }
-          )
+          .insert([paymentPayload])
           .select("id");
 
         if (paymentError) {
-          summary.errors.push(`Payment for ${occupancy.id}: ${paymentError.message}`);
-          continue;
-        }
+          const isDuplicate =
+            paymentError.code === "23505" ||
+            paymentError.message?.toLowerCase().includes("duplicate key value");
+          if (!isDuplicate) {
+            summary.errors.push(`Payment for ${occupancy.id}: ${paymentError.message}`);
+            continue;
+          }
 
-        const paymentId = paymentRows?.[0]?.id ?? null;
-        if (paymentId) {
-          summary.dues_created += 1;
-        } else {
           summary.dues_skipped += 1;
+          const { data: existingPayment, error: existingPaymentError } =
+            await supabase
+              .from("pg_payments")
+              .select("id")
+              .eq("tenant_id", tenantId)
+              .eq("occupancy_id", occupancy.id)
+              .eq("period_start", periodStartDate)
+              .is("deleted_at", null)
+              .maybeSingle();
+
+          if (existingPaymentError) {
+            summary.errors.push(
+              `Payment lookup for ${occupancy.id}: ${existingPaymentError.message}`
+            );
+            continue;
+          }
+
+          paymentId = existingPayment?.id ?? null;
+        } else {
+          paymentId = paymentRows?.[0]?.id ?? null;
+          if (paymentId) {
+            summary.dues_created += 1;
+          } else {
+            summary.dues_skipped += 1;
+          }
         }
 
         const contact = Array.isArray(occupancy.contacts)
@@ -260,44 +280,42 @@ serve(async (req) => {
           ? renderTemplate(subjectTemplate, variables)
           : null;
 
+        const outboxPayload = {
+          tenant_id: tenantId,
+          channel: "internal",
+          status: "queued",
+          scheduled_at: now.toISOString(),
+          contact_id: occupancy.contact_id,
+          to_phone: contact?.phone ?? null,
+          to_email: contact?.email ?? null,
+          template_key: template?.key ?? null,
+          subject,
+          body,
+          related_table: "pg_payments",
+          related_id: paymentId,
+          idempotency_key: `pg_due:${occupancy.id}:${periodStartDate}`,
+          meta: {
+            job: "pg_monthly_dues",
+            occupancy_id: occupancy.id,
+            period_start: periodStartDate
+          }
+        };
+
         const { data: outboxRows, error: outboxError } = await supabase
           .from("message_outbox")
-          .upsert(
-            [
-              {
-                tenant_id: tenantId,
-                channel: "internal",
-                status: "queued",
-                scheduled_at: now.toISOString(),
-                contact_id: occupancy.contact_id,
-                to_phone: contact?.phone ?? null,
-                to_email: contact?.email ?? null,
-                template_key: template?.key ?? null,
-                subject,
-                body,
-                related_table: "pg_payments",
-                related_id: paymentId,
-                idempotency_key: `pg_due:${occupancy.id}:${periodStartDate}`,
-                meta: {
-                  job: "pg_monthly_dues",
-                  occupancy_id: occupancy.id,
-                  period_start: periodStartDate
-                }
-              }
-            ],
-            {
-              onConflict: "tenant_id,idempotency_key",
-              ignoreDuplicates: true
-            }
-          )
+          .insert([outboxPayload])
           .select("id");
 
         if (outboxError) {
-          summary.errors.push(`Outbox for ${occupancy.id}: ${outboxError.message}`);
-          continue;
-        }
-
-        if (outboxRows?.length) {
+          const isDuplicate =
+            outboxError.code === "23505" ||
+            outboxError.message?.toLowerCase().includes("duplicate key value");
+          if (!isDuplicate) {
+            summary.errors.push(`Outbox for ${occupancy.id}: ${outboxError.message}`);
+            continue;
+          }
+          summary.outbox_skipped += 1;
+        } else if (outboxRows?.length) {
           summary.outbox_created += 1;
         } else {
           summary.outbox_skipped += 1;
