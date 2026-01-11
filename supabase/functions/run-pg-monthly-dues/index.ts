@@ -60,10 +60,44 @@ serve(async () => {
   });
 
   if (runInsertError?.code === "23505") {
-    return new Response(
-      JSON.stringify({ ok: true, skipped: true, run_key: runKey }),
-      { status: 200 }
-    );
+    const { data: existingRun, error: existingError } = await supabase
+      .from("job_runs")
+      .select("status")
+      .eq("job", "pg_monthly_dues")
+      .eq("run_key", runKey)
+      .maybeSingle();
+
+    if (existingError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: existingError.message }),
+        { status: 500 }
+      );
+    }
+
+    if (existingRun?.status !== "failed") {
+      return new Response(
+        JSON.stringify({ ok: true, skipped: true, run_key: runKey }),
+        { status: 200 }
+      );
+    }
+
+    const { error: restartError } = await supabase
+      .from("job_runs")
+      .update({
+        status: "running",
+        started_at: now.toISOString(),
+        finished_at: null,
+        summary: {}
+      })
+      .eq("job", "pg_monthly_dues")
+      .eq("run_key", runKey);
+
+    if (restartError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: restartError.message }),
+        { status: 500 }
+      );
+    }
   }
 
   if (runInsertError) {
