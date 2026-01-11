@@ -1,18 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-
-type LeadField = {
-  key: string;
-  label?: string;
-  type?: string;
-  required?: boolean;
-  options?: string[];
-};
 
 type LandingSettings = {
   tenant_id?: string;
+  name?: string;
   brand_name?: string;
   tagline?: string;
   logo_url?: string;
@@ -20,16 +13,10 @@ type LandingSettings = {
   contact_email?: string;
   contact_phone?: string;
   address?: string;
-  lead_form_schema?: {
-    fields?: LeadField[];
-  };
   campaign?: string;
   lead_campaign?: string;
   default_campaign?: string;
 };
-
-const normalizeFieldType = (fieldType?: string) =>
-  (fieldType ?? "text").toLowerCase();
 
 const resolveCampaign = (settings: LandingSettings | null) => {
   const campaign =
@@ -43,16 +30,21 @@ export default function TenantLandingPage({
   params: { slug: string };
 }) {
   const [settings, setSettings] = useState<LandingSettings | null>(null);
-  const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successId, setSuccessId] = useState<string | null>(null);
+  const [showEmail, setShowEmail] = useState(false);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [formState, setFormState] = useState({
+    fullName: "",
+    phone: "",
+    email: "",
+    studentType: "",
+    moveInMonth: ""
+  });
 
-  const fields = useMemo(
-    () => settings?.lead_form_schema?.fields ?? [],
-    [settings]
-  );
+  const isLoading = loading || !settings;
 
   useEffect(() => {
     let active = true;
@@ -93,24 +85,23 @@ export default function TenantLandingPage({
     };
   }, [params.slug]);
 
-  useEffect(() => {
-    if (!fields.length) return;
-
-    const nextValues: Record<string, unknown> = {};
-    for (const field of fields) {
-      const fieldType = normalizeFieldType(field.type);
-      if (fieldType === "checkbox") {
-        nextValues[field.key] = false;
-      } else {
-        nextValues[field.key] = "";
-      }
-    }
-    setFormValues(nextValues);
-  }, [fields]);
-
-  const handleChange = (key: string, value: string | boolean | string[]) => {
-    setFormValues((prev) => ({ ...prev, [key]: value }));
-  };
+  const contactPhone = settings?.contact_phone ?? "";
+  const cleanPhone = contactPhone.replace(/\D/g, "");
+  const whatsappLink = cleanPhone ? `https://wa.me/${cleanPhone}` : null;
+  const callLink = contactPhone ? `tel:${contactPhone}` : null;
+  const shareLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/t/${params.slug}`
+      : "";
+  const tenantName = settings?.brand_name ?? settings?.name ?? params.slug;
+  const promiseLine =
+    settings?.tagline ??
+    "For JEE/NEET students who want a safe, calm stay near coaching.";
+  const whatsappText = `Hi, I just submitted an enquiry on ${tenantName}.`;
+  const whatsappPrefill =
+    whatsappLink && whatsappText
+      ? `${whatsappLink}?text=${encodeURIComponent(whatsappText)}`
+      : whatsappLink;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -118,18 +109,20 @@ export default function TenantLandingPage({
     setSuccessId(null);
     setSubmitting(true);
 
-    const payload = { ...formValues } as Record<string, unknown>;
-    const fullName =
-      (payload.full_name as string | undefined) ||
-      (payload.fullName as string | undefined) ||
-      (payload.name as string | undefined);
-    const phone = payload.phone as string | undefined;
-    const email = payload.email as string | undefined;
-
-    const contact: Record<string, unknown> = { ...payload };
-    if (fullName) contact.full_name = fullName;
-    if (phone) contact.phone = phone;
-    if (email) contact.email = email;
+    const contact: Record<string, unknown> = {
+      full_name: formState.fullName,
+      phone: formState.phone,
+      email: formState.email || null,
+      student_type: formState.studentType || null,
+      move_in_month: formState.moveInMonth || null
+    };
+    const payload: Record<string, unknown> = {
+      full_name: formState.fullName,
+      phone: formState.phone,
+      email: formState.email || null,
+      student_type: formState.studentType || null,
+      move_in_month: formState.moveInMonth || null
+    };
 
     const { data, error: submitError } = await supabase
       .schema("public")
@@ -165,9 +158,29 @@ export default function TenantLandingPage({
 
     setSuccessId(leadIdValue ? String(leadIdValue) : "submitted");
     setSubmitting(false);
+    setFormState({
+      fullName: "",
+      phone: "",
+      email: "",
+      studentType: "",
+      moveInMonth: ""
+    });
+    setShowEmail(false);
   };
 
-  if (loading) {
+  const handleCopyLink = async () => {
+    if (!shareLink) return;
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopyMessage("Link copied");
+      setTimeout(() => setCopyMessage(null), 2000);
+    } catch (copyError) {
+      setCopyMessage("Copy failed");
+      setTimeout(() => setCopyMessage(null), 2000);
+    }
+  };
+
+  if (isLoading) {
     return (
       <div className="card">
         <h1>Loading landing...</h1>
@@ -186,124 +199,140 @@ export default function TenantLandingPage({
   }
 
   return (
-    <div className="card">
-      {settings?.logo_url && (
-        <img
-          src={settings.logo_url}
-          alt={settings?.brand_name ?? "Tenant logo"}
-          style={{ maxWidth: "160px", marginBottom: "12px" }}
-        />
-      )}
-      <h1>{settings?.brand_name ?? params.slug}</h1>
-      <p className="muted">{settings?.tagline ?? "Welcome to our space."}</p>
-
-      <div className="section">
-        <div className="section-title">Contact</div>
-        <p className="muted">
-          {settings?.contact_phone && (
-            <span>Phone: {settings.contact_phone} </span>
+    <div className="landing">
+      <div className="card landing-hero">
+        <div>
+          {settings?.logo_url && (
+            <img
+              src={settings.logo_url}
+              alt={tenantName}
+              className="landing-logo"
+            />
           )}
-          {settings?.contact_email && (
-            <span>Email: {settings.contact_email} </span>
-          )}
-        </p>
-        {settings?.address && (
-          <p className="muted">Address: {settings.address}</p>
-        )}
+          <h1>{tenantName}</h1>
+          <p className="muted landing-promise">{promiseLine}</p>
+        </div>
+        <div className="cta-row">
+          <a
+            className={`button ${whatsappLink ? "" : "disabled"}`}
+            href={whatsappLink ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            aria-disabled={!whatsappLink}
+          >
+            WhatsApp Now
+          </a>
+          <a
+            className={`button secondary ${callLink ? "" : "disabled"}`}
+            href={callLink ?? "#"}
+            aria-disabled={!callLink}
+          >
+            Call Now
+          </a>
+        </div>
+        <div className="landing-trust">
+          <span>Walking distance to JEE/NEET classes</span>
+          <span>Homely food + safe environment</span>
+          <span>Limited beds (10 total)</span>
+        </div>
       </div>
 
-      <div className="section">
+      <div className="card landing-form">
         <div className="section-title">Get in touch</div>
         {successId ? (
-          <div className="notice">
-            Lead submitted successfully. Reference: {successId}
+          <div className="notice landing-success">
+            <h3>Thanks! We received your enquiry.</h3>
+            <p className="muted">
+              We&apos;ll WhatsApp/call you within 10 minutes.
+            </p>
+            {whatsappPrefill && (
+              <a className="button" href={whatsappPrefill} target="_blank" rel="noreferrer">
+                Send WhatsApp message now
+              </a>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            {fields.length === 0 && (
-              <p className="muted">No lead form configured.</p>
+            <label className="field">
+              <span>Full Name*</span>
+              <input
+                type="text"
+                required
+                value={formState.fullName}
+                onChange={(event) =>
+                  setFormState((prev) => ({
+                    ...prev,
+                    fullName: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Phone*</span>
+              <input
+                type="tel"
+                required
+                value={formState.phone}
+                onChange={(event) =>
+                  setFormState((prev) => ({
+                    ...prev,
+                    phone: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Student Type</span>
+              <select
+                value={formState.studentType}
+                onChange={(event) =>
+                  setFormState((prev) => ({
+                    ...prev,
+                    studentType: event.target.value
+                  }))
+                }
+              >
+                <option value="">Select</option>
+                <option value="JEE">JEE</option>
+                <option value="NEET">NEET</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Move-in month</span>
+              <input
+                type="month"
+                value={formState.moveInMonth}
+                onChange={(event) =>
+                  setFormState((prev) => ({
+                    ...prev,
+                    moveInMonth: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setShowEmail((prev) => !prev)}
+            >
+              Add email (optional)
+            </button>
+            {showEmail && (
+              <label className="field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={formState.email}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      email: event.target.value
+                    }))
+                  }
+                />
+              </label>
             )}
-            {fields.map((field) => {
-              const fieldType = normalizeFieldType(field.type);
-              const value = formValues[field.key] ?? "";
-
-              if (fieldType === "textarea") {
-                return (
-                  <label className="field" key={field.key}>
-                    <span>{field.label ?? field.key}</span>
-                    <textarea
-                      value={String(value)}
-                      rows={4}
-                      required={field.required}
-                      onChange={(event) =>
-                        handleChange(field.key, event.target.value)
-                      }
-                    />
-                  </label>
-                );
-              }
-
-              if (fieldType === "select") {
-                return (
-                  <label className="field" key={field.key}>
-                    <span>{field.label ?? field.key}</span>
-                    <select
-                      value={String(value)}
-                      required={field.required}
-                      onChange={(event) =>
-                        handleChange(field.key, event.target.value)
-                      }
-                    >
-                      <option value="">Select</option>
-                      {(field.options ?? []).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                );
-              }
-
-              if (fieldType === "checkbox") {
-                return (
-                  <label className="field" key={field.key}>
-                    <span>{field.label ?? field.key}</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(value)}
-                      onChange={(event) =>
-                        handleChange(field.key, event.target.checked)
-                      }
-                    />
-                  </label>
-                );
-              }
-
-              const inputType =
-                fieldType === "phone" || fieldType === "tel"
-                  ? "tel"
-                  : fieldType === "email"
-                    ? "email"
-                    : fieldType === "number"
-                      ? "number"
-                      : "text";
-
-              return (
-                <label className="field" key={field.key}>
-                  <span>{field.label ?? field.key}</span>
-                  <input
-                    type={inputType}
-                    value={String(value)}
-                    required={field.required}
-                    onChange={(event) =>
-                      handleChange(field.key, event.target.value)
-                    }
-                  />
-                </label>
-              );
-            })}
-
             <button
               className="button"
               type="submit"
@@ -321,6 +350,17 @@ export default function TenantLandingPage({
             </button>
           </form>
         )}
+      </div>
+
+      <div className="card landing-share">
+        <div>
+          <div className="section-title">Share this page</div>
+          <p className="muted">Send this link to parents and students.</p>
+        </div>
+        <button className="button secondary" type="button" onClick={handleCopyLink}>
+          Copy link
+        </button>
+        {copyMessage && <span className="muted">{copyMessage}</span>}
       </div>
     </div>
   );

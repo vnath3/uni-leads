@@ -60,6 +60,16 @@ textarea {
   font-size: 1rem;
 }
 
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fffdf9;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -162,12 +172,69 @@ textarea {
   margin-bottom: 16px;
 }
 
-input[type="email"],
-input[type="password"] {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: #fffdf9;
+.landing {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.landing-logo {
+  max-width: 160px;
+  margin-bottom: 12px;
+}
+
+.landing-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.landing-promise {
+  font-size: 1.05rem;
+}
+
+.cta-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.landing-trust {
+  display: grid;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.landing-trust span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.landing-trust span::before {
+  content: "•";
+  color: var(--accent);
+}
+
+.landing-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.landing-success {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.landing-share {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(182, 90, 60, 0.08);
 }
 
 .button {
@@ -392,6 +459,21 @@ input[type="password"] {
   }
 
   .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cta-row .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .landing-share {
     flex-direction: column;
     align-items: flex-start;
   }
