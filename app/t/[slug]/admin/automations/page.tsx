@@ -274,9 +274,9 @@ export default function AutomationsPage() {
                       setRules((prev) => ({
                         ...prev,
                         [job.job]: {
-                          ...prev[job.job],
+                          ...(prev[job.job] ?? {}),
                           config: {
-                            ...prev[job.job].config,
+                            ...(prev[job.job]?.config ?? {}),
                             due_day: Number(event.target.value || 1)
                           }
                         }
@@ -301,9 +301,9 @@ export default function AutomationsPage() {
                       setRules((prev) => ({
                         ...prev,
                         [job.job]: {
-                          ...prev[job.job],
+                          ...(prev[job.job] ?? {}),
                           config: {
-                            ...prev[job.job].config,
+                            ...(prev[job.job]?.config ?? {}),
                             window_hours: Number(event.target.value || 1)
                           }
                         }
