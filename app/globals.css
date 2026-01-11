@@ -104,6 +104,22 @@ textarea {
   gap: 8px;
 }
 
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.overview-card {
+  background: #fdf9f3;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .tag {
   background: rgba(182, 90, 60, 0.1);
   border: 1px solid rgba(182, 90, 60, 0.3);
@@ -206,6 +222,12 @@ input[type="password"] {
   align-items: flex-start;
 }
 
+.admin-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .admin-sidebar {
   width: 220px;
   background: var(--card);
@@ -229,7 +251,7 @@ input[type="password"] {
 .admin-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
 
 .admin-nav a {
@@ -241,6 +263,19 @@ input[type="password"] {
   color: var(--accent);
 }
 
+.admin-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-nav-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
 .admin-main {
   flex: 1;
 }
@@ -249,7 +284,37 @@ input[type="password"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 16px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(6px);
+}
+
+.admin-topbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-topbar-center {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  flex: 1;
+  text-align: center;
+}
+
+.admin-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .support-banner {
@@ -260,6 +325,54 @@ input[type="password"] {
   color: var(--accent-dark);
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.support-badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(182, 90, 60, 0.12);
+  border: 1px solid rgba(182, 90, 60, 0.3);
+  color: var(--accent-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.support-ro-banner {
+  padding: 12px 16px;
+  border-radius: 0;
+  background: rgba(182, 90, 60, 0.18);
+  border-bottom: 1px solid rgba(182, 90, 60, 0.3);
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.admin-dropdown {
+  position: relative;
+}
+
+.admin-dropdown summary {
+  list-style: none;
+}
+
+.admin-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  z-index: 30;
 }
 
 @keyframes rise {
@@ -304,5 +417,11 @@ input[type="password"] {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .admin-dropdown-menu {
+    position: static;
+    box-shadow: none;
+    border-radius: 10px;
   }
 }

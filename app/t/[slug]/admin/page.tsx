@@ -40,6 +40,17 @@ type Lead = Record<string, unknown> & {
   campaign?: string | null;
 };
 
+type PaymentRow = {
+  id?: string;
+  status?: string | null;
+  due_date?: string | null;
+};
+
+type OutboxRow = {
+  id?: string;
+  status?: string | null;
+};
+
 const formatDateTime = (value?: string | null) => {
   if (!value) return "";
   const date = new Date(value);
@@ -98,6 +109,10 @@ export default function TenantAdminPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [grants, setGrants] = useState<SupportGrant[]>([]);
+  const [paymentCounts, setPaymentCounts] = useState({ open: 0, overdue: 0 });
+  const [outboxCounts, setOutboxCounts] = useState({ queued: 0, failed: 0 });
+  const [showAllContacts, setShowAllContacts] = useState(false);
+  const [showAllLeads, setShowAllLeads] = useState(false);
   const [grantUserId, setGrantUserId] = useState("");
   const [grantMode, setGrantMode] = useState<"RO" | "RW">("RO");
   const [grantHours, setGrantHours] = useState(24);
@@ -128,6 +143,8 @@ export default function TenantAdminPage() {
   const hasPgModules = hasPgBeds || hasPgPayments;
   const showSupportSection =
     isOwnerAdmin || (tenant.isPlatformUser && tenant.supportMode !== "none");
+  const readOnly = !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
 
   const contactById = useMemo(() => {
     const map: Record<string, Contact> = {};
@@ -136,6 +153,37 @@ export default function TenantAdminPage() {
     }
     return map;
   }, [contacts]);
+
+  const visibleContacts = showAllContacts ? contacts : contacts.slice(0, 5);
+  const visibleLeads = showAllLeads ? leads : leads.slice(0, 5);
+
+  const leadStats = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    let todayCount = 0;
+    let weekCount = 0;
+
+    for (const lead of leads) {
+      const ts = lead.submitted_at ?? lead.created_at;
+      if (!ts) continue;
+      const date = new Date(ts);
+      if (Number.isNaN(date.getTime())) continue;
+      if (date >= startOfToday) {
+        todayCount += 1;
+      }
+      if (date >= weekAgo) {
+        weekCount += 1;
+      }
+    }
+
+    return { todayCount, weekCount };
+  }, [leads]);
 
   useEffect(() => {
     let active = true;
@@ -146,7 +194,24 @@ export default function TenantAdminPage() {
 
       const nowIso = new Date().toISOString();
 
-      const [featuresRes, contactsRes, leadsRes, grantsRes] = await Promise.all([
+      const paymentsQuery = hasPgPayments
+        ? supabase
+            .from("pg_payments")
+            .select("id, status, due_date")
+            .eq("tenant_id", tenant.tenantId)
+            .is("deleted_at", null)
+            .in("status", ["due", "partial"])
+        : Promise.resolve({ data: [], error: null });
+
+      const outboxQuery = supabase
+        .from("message_outbox")
+        .select("id, status")
+        .eq("tenant_id", tenant.tenantId)
+        .is("deleted_at", null)
+        .in("status", ["queued", "failed"]);
+
+      const [featuresRes, contactsRes, leadsRes, grantsRes, paymentsRes, outboxRes] =
+        await Promise.all([
         supabase.from("features").select("key, name, category").order("name"),
         fetchContacts(tenant.tenantId),
         fetchLeads(tenant.tenantId),
@@ -161,6 +226,9 @@ export default function TenantAdminPage() {
               .gt("expires_at", nowIso)
               .order("expires_at", { ascending: false })
           : Promise.resolve({ data: [], error: null })
+        ,
+        paymentsQuery,
+        outboxQuery
       ]);
 
       if (!active) return;
@@ -169,7 +237,9 @@ export default function TenantAdminPage() {
         featuresRes.error ||
         contactsRes.error ||
         leadsRes.error ||
-        (isOwnerAdmin ? grantsRes.error : null);
+        (isOwnerAdmin ? grantsRes.error : null) ||
+        paymentsRes.error ||
+        outboxRes.error;
 
       if (firstError) {
         setError(firstError.message);
@@ -181,6 +251,29 @@ export default function TenantAdminPage() {
       setContacts((contactsRes.data as Contact[]) ?? []);
       setLeads((leadsRes.data as Lead[]) ?? []);
       setGrants((grantsRes.data as SupportGrant[]) ?? []);
+      const payments = (paymentsRes.data as PaymentRow[]) ?? [];
+      const nowDate = new Date();
+      let openCount = 0;
+      let overdueCount = 0;
+      for (const payment of payments) {
+        openCount += 1;
+        if (payment.due_date) {
+          const dueDate = new Date(payment.due_date);
+          if (!Number.isNaN(dueDate.getTime()) && dueDate < nowDate) {
+            overdueCount += 1;
+          }
+        }
+      }
+      setPaymentCounts({ open: openCount, overdue: overdueCount });
+
+      const outboxRows = (outboxRes.data as OutboxRow[]) ?? [];
+      let queuedCount = 0;
+      let failedCount = 0;
+      for (const item of outboxRows) {
+        if (item.status === "queued") queuedCount += 1;
+        if (item.status === "failed") failedCount += 1;
+      }
+      setOutboxCounts({ queued: queuedCount, failed: failedCount });
       setLoading(false);
     };
 
@@ -189,7 +282,7 @@ export default function TenantAdminPage() {
     return () => {
       active = false;
     };
-  }, [tenant.tenantId, isOwnerAdmin]);
+  }, [tenant.tenantId, isOwnerAdmin, hasPgPayments]);
 
   const handleStatusUpdate = async (
     contactId: string | undefined,
@@ -296,6 +389,11 @@ export default function TenantAdminPage() {
     await refreshGrants();
   };
 
+  const handleConvertLead = async (lead: Lead) => {
+    if (!lead.contact_id) return;
+    await handleStatusUpdate(lead.contact_id, "resident");
+  };
+
   if (loading) {
     return (
       <div className="card">
@@ -308,9 +406,77 @@ export default function TenantAdminPage() {
   return (
     <>
       <div className="card" id="overview">
-        <h1>Tenant Admin</h1>
-        <p className="muted">Tenant slug: {tenant.slug}</p>
+        <div className="card-header">
+          <div>
+            <h1>Overview</h1>
+            <p className="muted">Tenant slug: {tenant.slug}</p>
+          </div>
+          <div>
+            {hasPgPayments &&
+              (readOnly ? (
+                <span className="button disabled" title={roTooltip}>
+                  Create Due (PG)
+                </span>
+              ) : (
+                <Link className="button" href={`/t/${tenant.slug}/admin/pg/payments`}>
+                  Create Due (PG)
+                </Link>
+              ))}
+            {hasPgBeds &&
+              (readOnly ? (
+                <span className="button secondary disabled" title={roTooltip}>
+                  Add Occupancy
+                </span>
+              ) : (
+                <Link
+                  className="button secondary"
+                  href={`/t/${tenant.slug}/admin/pg/occupancy`}
+                >
+                  Add Occupancy
+                </Link>
+              ))}
+          </div>
+        </div>
         {error && <div className="error">{error}</div>}
+        <div className="section">
+          <div className="section-title">Today</div>
+          <div className="overview-grid">
+            <div className="overview-card">
+              <h3>New leads</h3>
+              <p className="muted">
+                Today: {leadStats.todayCount} | This week: {leadStats.weekCount}
+              </p>
+              <Link className="button secondary" href="#leads">
+                View Leads
+              </Link>
+            </div>
+            <div className="overview-card">
+              <h3>Open dues</h3>
+              <p className="muted">
+                Open: {paymentCounts.open} | Overdue: {paymentCounts.overdue}
+              </p>
+              {hasPgPayments ? (
+                <Link
+                  className="button secondary"
+                  href={`/t/${tenant.slug}/admin/pg/payments`}
+                >
+                  View Payments
+                </Link>
+              ) : (
+                <span className="button secondary disabled">View Payments</span>
+              )}
+            </div>
+            <div className="overview-card">
+              <h3>Outbox</h3>
+              <p className="muted">
+                Queued: {outboxCounts.queued} | Failed: {outboxCounts.failed}
+              </p>
+              <Link className="button secondary" href={`/t/${tenant.slug}/admin/outbox`}>
+                View Outbox
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="card" id="features">
@@ -373,7 +539,7 @@ export default function TenantAdminPage() {
         {contacts.length === 0 ? (
           <p className="muted">No contacts yet.</p>
         ) : (
-          contacts.map((contact) => {
+          visibleContacts.map((contact) => {
             const displayName =
               contact.full_name || contact.name || "Unnamed contact";
             const status = contact.status ?? "unknown";
@@ -392,6 +558,7 @@ export default function TenantAdminPage() {
                   <button
                     className={`button ${canWrite ? "" : "disabled"}`}
                     disabled={!canWrite || status === "resident"}
+                    title={!canWrite ? roTooltip : undefined}
                     onClick={() => handleStatusUpdate(contact.id, "resident")}
                   >
                     Mark as Resident
@@ -402,6 +569,7 @@ export default function TenantAdminPage() {
                     <button
                       className={`button ${canWrite ? "" : "disabled"}`}
                       disabled={!canWrite || status === "patient"}
+                      title={!canWrite ? roTooltip : undefined}
                       onClick={() => handleStatusUpdate(contact.id, "patient")}
                     >
                       Mark as Patient
@@ -409,6 +577,7 @@ export default function TenantAdminPage() {
                     <button
                       className={`button secondary ${canWrite ? "" : "disabled"}`}
                       disabled={!canWrite || status === "active_customer"}
+                      title={!canWrite ? roTooltip : undefined}
                       onClick={() =>
                         handleStatusUpdate(contact.id, "active_customer")
                       }
@@ -421,6 +590,15 @@ export default function TenantAdminPage() {
             );
           })
         )}
+        {contacts.length > 5 && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setShowAllContacts((prev) => !prev)}
+          >
+            {showAllContacts ? "Show fewer" : "View all contacts"}
+          </button>
+        )}
       </div>
 
       <div className="card" id="leads">
@@ -428,11 +606,13 @@ export default function TenantAdminPage() {
         {leads.length === 0 ? (
           <p className="muted">No leads submitted.</p>
         ) : (
-          leads.map((lead) => {
+          visibleLeads.map((lead) => {
             const contact = lead.contact_id ? contactById[lead.contact_id] : null;
             const name =
               contact?.full_name || contact?.name || lead.contact_id || "Lead";
             const phone = contact?.phone || contact?.email || "";
+            const status = contact?.status ?? null;
+            const disableConvert = !canWrite || !lead.contact_id;
             return (
               <div className="card" key={lead.id ?? String(name)}>
                 <h3>{name}</h3>
@@ -444,9 +624,28 @@ export default function TenantAdminPage() {
                   {lead.source ? `Source: ${lead.source}` : ""}
                   {lead.campaign ? ` | Campaign: ${lead.campaign}` : ""}
                 </p>
+                {hasPgBeds && (
+                  <button
+                    className={`button ${disableConvert ? "disabled" : ""}`}
+                    disabled={disableConvert || status === "resident"}
+                    title={disableConvert ? roTooltip : undefined}
+                    onClick={() => handleConvertLead(lead)}
+                  >
+                    Convert to Resident
+                  </button>
+                )}
               </div>
             );
           })
+        )}
+        {leads.length > 5 && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setShowAllLeads((prev) => !prev)}
+          >
+            {showAllLeads ? "Show fewer" : "View all leads"}
+          </button>
         )}
       </div>
 

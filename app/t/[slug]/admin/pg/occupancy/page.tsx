@@ -71,6 +71,7 @@ export default function PgOccupancyPage() {
   });
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
   const hasBeds = tenant.enabledFeatureKeys.includes("pg.beds");
 
   const contactById = useMemo(() => {
@@ -425,6 +426,7 @@ export default function PgOccupancyPage() {
           <button
             className={`button ${readOnly ? "disabled" : ""}`}
             disabled={readOnly || assigning}
+            title={readOnly ? roTooltip : undefined}
           >
             {assigning ? "Assigning..." : "Assign bed"}
           </button>
@@ -452,6 +454,7 @@ export default function PgOccupancyPage() {
                 type="button"
                 className={`button secondary ${readOnly ? "disabled" : ""}`}
                 disabled={readOnly || endingId === occupancy.id}
+                title={readOnly ? roTooltip : undefined}
                 onClick={() => handleEnd(occupancy)}
               >
                 {endingId === occupancy.id ? "Ending..." : "End occupancy"}

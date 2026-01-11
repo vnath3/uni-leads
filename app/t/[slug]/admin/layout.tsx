@@ -40,6 +40,9 @@ export default function TenantAdminLayout({
   const [contextValue, setContextValue] = useState<TenantAdminContext | null>(
     null
   );
+  const [tenantName, setTenantName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   const adminPath = useMemo(() => `/t/${params.slug}/admin`, [params.slug]);
 
@@ -66,6 +69,7 @@ export default function TenantAdminLayout({
         router.replace(`/login?redirect=${encodeURIComponent(adminPath)}`);
         return;
       }
+      setUserEmail(sessionData.session.user.email ?? null);
 
       let tenantContext: TenantContext;
       try {
@@ -123,6 +127,16 @@ export default function TenantAdminLayout({
         isOwnerAdmin,
         canWrite
       });
+
+      const { data: tenantRow } = await supabase
+        .from("tenants")
+        .select("name")
+        .eq("id", tenantContext.tenantId)
+        .maybeSingle();
+
+      if (active) {
+        setTenantName(tenantRow?.name ?? null);
+      }
       setLoading(false);
     };
 
@@ -190,55 +204,128 @@ export default function TenantAdminLayout({
   const supportLabel =
     contextValue.tenant.supportMode === "none"
       ? null
-      : `Support Mode: ${contextValue.tenant.supportMode.toUpperCase()}`;
+      : `Support: ${contextValue.tenant.supportMode.toUpperCase()}`;
+  const showSupportBanner = contextValue.tenant.supportMode === "ro";
+  const tenantDisplayName = tenantName || contextValue.tenant.slug;
+  const tenantSubLabel = tenantName ? contextValue.tenant.slug : "Tenant";
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  };
+
+  const copyLink = async (label: string, path: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(path, window.location.origin).toString();
+      await navigator.clipboard.writeText(url);
+      setCopyMessage(`${label} copied`);
+      setTimeout(() => setCopyMessage(null), 2000);
+    } catch (copyError) {
+      setCopyMessage("Copy failed");
+      setTimeout(() => setCopyMessage(null), 2000);
+    }
+  };
 
   return (
     <TenantContextProvider value={contextValue}>
-      <div className="admin-shell">
-        <aside className="admin-sidebar">
-          <div className="admin-sidebar-header">
-            <div className="admin-tenant">{contextValue.tenant.slug}</div>
-            <div className="muted">Tenant admin</div>
+      <div className="admin-layout">
+        <header className="admin-topbar">
+          <div className="admin-topbar-left">
+            <div className="admin-tenant">{tenantDisplayName}</div>
+            <div className="muted">{tenantSubLabel}</div>
           </div>
-          <nav className="admin-nav">
-            <Link href={`${adminPath}#overview`}>Overview</Link>
-            <Link href={`${adminPath}#features`}>Features</Link>
-            <Link href={`${adminPath}#contacts`}>Contacts</Link>
-            <Link href={`${adminPath}#leads`}>Leads</Link>
-            {hasAppointments && (
-              <Link href={`${adminPath}/appointments`}>Appointments</Link>
-            )}
-            {hasPgBeds && (
-              <Link href={`${adminPath}/pg/beds`}>PG Beds</Link>
-            )}
-            {hasPgBeds && (
-              <Link href={`${adminPath}/pg/occupancy`}>PG Occupancy</Link>
-            )}
-            {hasPgPayments && (
-              <Link href={`${adminPath}/pg/payments`}>PG Payments</Link>
-            )}
-            {hasAuditAccess && (
-              <Link href={`${adminPath}/audit`}>Audit</Link>
-            )}
-            {hasAutomationAccess && (
-              <Link href={`${adminPath}/automations`}>Automations</Link>
-            )}
-            {hasAutomationAccess && (
-              <Link href={`${adminPath}/outbox`}>Outbox</Link>
-            )}
-            {showSupportNav && <Link href={`${adminPath}#support`}>Support</Link>}
-          </nav>
-        </aside>
-        <section className="admin-main">
-          <div className="admin-topbar">
-            <div>
-              <div className="admin-tenant">{contextValue.tenant.slug}</div>
-              <div className="muted">Admin console</div>
+          <div className="admin-topbar-center muted">Tenant Admin</div>
+          <div className="admin-topbar-right">
+            {supportLabel && <span className="support-badge">{supportLabel}</span>}
+            <details className="admin-dropdown">
+              <summary className="button secondary">Copy links</summary>
+              <div className="admin-dropdown-menu">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => copyLink("Landing link", `/t/${params.slug}`)}
+                >
+                  Copy landing
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => copyLink("Admin link", adminPath)}
+                >
+                  Copy admin
+                </button>
+                {copyMessage && <div className="muted">{copyMessage}</div>}
+              </div>
+            </details>
+            <details className="admin-dropdown">
+              <summary className="button secondary">
+                {userEmail ?? "User menu"}
+              </summary>
+              <div className="admin-dropdown-menu">
+                <div className="muted">{userEmail ?? "Signed in"}</div>
+                <button type="button" className="button" onClick={handleSignOut}>
+                  Sign out
+                </button>
+              </div>
+            </details>
+          </div>
+        </header>
+        {showSupportBanner && (
+          <div className="support-ro-banner">
+            Support is viewing in Read-only mode
+          </div>
+        )}
+        <div className="admin-shell">
+          <aside className="admin-sidebar">
+            <div className="admin-sidebar-header">
+              <div className="admin-tenant">{tenantDisplayName}</div>
+              <div className="muted">Tenant admin</div>
             </div>
-            {supportLabel && <div className="support-banner">{supportLabel}</div>}
-          </div>
-          <div className="admin-content">{children}</div>
-        </section>
+            <nav className="admin-nav">
+              <div className="admin-nav-group">
+                <div className="admin-nav-title">Dashboard</div>
+                <Link href={`${adminPath}#overview`}>Overview</Link>
+              </div>
+              <div className="admin-nav-group">
+                <div className="admin-nav-title">CRM</div>
+                <Link href={`${adminPath}#leads`}>Leads</Link>
+                <Link href={`${adminPath}#contacts`}>Contacts</Link>
+                {hasAppointments && (
+                  <Link href={`${adminPath}/appointments`}>Appointments</Link>
+                )}
+              </div>
+              <div className="admin-nav-group">
+                <div className="admin-nav-title">PG Ops</div>
+                {hasPgBeds && <Link href={`${adminPath}/pg/beds`}>Beds</Link>}
+                {hasPgBeds && (
+                  <Link href={`${adminPath}/pg/occupancy`}>Occupancy</Link>
+                )}
+                {hasPgPayments && (
+                  <Link href={`${adminPath}/pg/payments`}>Payments</Link>
+                )}
+              </div>
+              <div className="admin-nav-group">
+                <div className="admin-nav-title">Automation</div>
+                {hasAutomationAccess && (
+                  <Link href={`${adminPath}/automations`}>Automations</Link>
+                )}
+                {hasAutomationAccess && (
+                  <Link href={`${adminPath}/outbox`}>Outbox</Link>
+                )}
+              </div>
+              <div className="admin-nav-group">
+                <div className="admin-nav-title">System</div>
+                <Link href={`${adminPath}#features`}>Features</Link>
+                {hasAuditAccess && <Link href={`${adminPath}/audit`}>Audit</Link>}
+                {showSupportNav && <Link href={`${adminPath}#support`}>Support</Link>}
+              </div>
+            </nav>
+          </aside>
+          <section className="admin-main">
+            <div className="admin-content">{children}</div>
+          </section>
+        </div>
       </div>
     </TenantContextProvider>
   );

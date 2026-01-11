@@ -76,6 +76,7 @@ export default function PgBedsPage() {
   const [bedRoomFilter, setBedRoomFilter] = useState<string>("all");
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
   const hasBeds = tenant.enabledFeatureKeys.includes("pg.beds");
 
   const roomById = useMemo(() => {
@@ -456,6 +457,7 @@ export default function PgBedsPage() {
               <button
                 className={`button ${readOnly ? "disabled" : ""}`}
                 disabled={readOnly}
+                title={readOnly ? roTooltip : undefined}
               >
                 Create room
               </button>
@@ -541,6 +543,7 @@ export default function PgBedsPage() {
                           type="button"
                           className={`button ${readOnly ? "disabled" : ""}`}
                           disabled={readOnly}
+                          title={readOnly ? roTooltip : undefined}
                           onClick={() => handleUpdateRoom(room.id)}
                         >
                           Save
@@ -561,6 +564,7 @@ export default function PgBedsPage() {
                         type="button"
                         className={`button ${readOnly ? "disabled" : ""}`}
                         disabled={readOnly}
+                        title={readOnly ? roTooltip : undefined}
                         onClick={() => startRoomEdit(room)}
                       >
                         Edit
@@ -640,6 +644,7 @@ export default function PgBedsPage() {
               <button
                 className={`button ${readOnly ? "disabled" : ""}`}
                 disabled={readOnly}
+                title={readOnly ? roTooltip : undefined}
               >
                 Create bed
               </button>
@@ -771,6 +776,7 @@ export default function PgBedsPage() {
                           type="button"
                           className={`button ${readOnly ? "disabled" : ""}`}
                           disabled={readOnly}
+                          title={readOnly ? roTooltip : undefined}
                           onClick={() => handleUpdateBed(bed.id)}
                         >
                           Save
@@ -791,6 +797,7 @@ export default function PgBedsPage() {
                         type="button"
                         className={`button ${readOnly ? "disabled" : ""}`}
                         disabled={readOnly}
+                        title={readOnly ? roTooltip : undefined}
                         onClick={() => startBedEdit(bed)}
                       >
                         Edit

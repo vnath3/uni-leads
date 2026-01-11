@@ -53,6 +53,7 @@ export default function OutboxPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
 
   useEffect(() => {
     let active = true;
@@ -244,6 +245,7 @@ export default function OutboxPage() {
                   type="button"
                   className={`button ${readOnly ? "disabled" : ""}`}
                   disabled={readOnly || savingId === item.id}
+                  title={readOnly ? roTooltip : undefined}
                   onClick={() => updateStatus(item, "sent")}
                 >
                   Mark sent
@@ -252,6 +254,7 @@ export default function OutboxPage() {
                   type="button"
                   className={`button secondary ${readOnly ? "disabled" : ""}`}
                   disabled={readOnly || savingId === item.id}
+                  title={readOnly ? roTooltip : undefined}
                   onClick={() => updateStatus(item, "cancelled")}
                 >
                   Cancel
@@ -260,6 +263,7 @@ export default function OutboxPage() {
                   type="button"
                   className={`button secondary ${readOnly ? "disabled" : ""}`}
                   disabled={readOnly || savingId === item.id}
+                  title={readOnly ? roTooltip : undefined}
                   onClick={() => updateStatus(item, "queued", null)}
                 >
                   Retry

@@ -122,6 +122,7 @@ export default function AppointmentsPage() {
   });
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
   const hasAppointments = tenant.enabledFeatureKeys.includes(
     "clinic.appointments"
   );
@@ -602,7 +603,11 @@ export default function AppointmentsPage() {
               disabled={readOnly}
             />
           </label>
-          <button className={`button ${readOnly ? "disabled" : ""}`} disabled={readOnly || creating}>
+          <button
+            className={`button ${readOnly ? "disabled" : ""}`}
+            disabled={readOnly || creating}
+            title={readOnly ? roTooltip : undefined}
+          >
             {creating ? "Saving..." : "Create appointment"}
           </button>
         </form>
@@ -696,6 +701,7 @@ export default function AppointmentsPage() {
                     <button
                       className={`button ${readOnly ? "disabled" : ""}`}
                       disabled={readOnly}
+                      title={readOnly ? roTooltip : undefined}
                       onClick={() => handleUpdate(appointment.id)}
                       type="button"
                     >
@@ -716,6 +722,7 @@ export default function AppointmentsPage() {
                         className={`button ${readOnly ? "disabled" : ""}`}
                         type="button"
                         disabled={readOnly}
+                        title={readOnly ? roTooltip : undefined}
                         onClick={() => startEdit(appointment)}
                       >
                         Edit
@@ -724,6 +731,7 @@ export default function AppointmentsPage() {
                         className={`button secondary ${readOnly ? "disabled" : ""}`}
                         type="button"
                         disabled={readOnly || appointment.status === "cancelled"}
+                        title={readOnly ? roTooltip : undefined}
                         onClick={() =>
                           handleStatusUpdate(appointment.id, "cancelled")
                         }
@@ -734,6 +742,7 @@ export default function AppointmentsPage() {
                         className={`button secondary ${readOnly ? "disabled" : ""}`}
                         type="button"
                         disabled={readOnly || removingId === appointment.id}
+                        title={readOnly ? roTooltip : undefined}
                         onClick={() => handleRemove(appointment.id)}
                       >
                         {removingId === appointment.id ? "Removing..." : "Remove"}

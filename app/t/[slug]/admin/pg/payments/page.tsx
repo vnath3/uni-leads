@@ -103,6 +103,7 @@ export default function PgPaymentsPage() {
   });
 
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
   const hasPayments = tenant.enabledFeatureKeys.includes("pg.payments");
 
   const occupancyById = useMemo(() => {
@@ -558,6 +559,7 @@ export default function PgPaymentsPage() {
           <button
             className={`button ${readOnly ? "disabled" : ""}`}
             disabled={readOnly || creating}
+            title={readOnly ? roTooltip : undefined}
           >
             {creating ? "Saving..." : "Create due"}
           </button>
@@ -643,6 +645,7 @@ export default function PgPaymentsPage() {
                       type="button"
                       className={`button ${readOnly ? "disabled" : ""}`}
                       disabled={readOnly}
+                      title={readOnly ? roTooltip : undefined}
                       onClick={() => handleMarkPaid(payment)}
                     >
                       Mark paid
@@ -651,6 +654,7 @@ export default function PgPaymentsPage() {
                       type="button"
                       className={`button secondary ${readOnly ? "disabled" : ""}`}
                       disabled={readOnly}
+                      title={readOnly ? roTooltip : undefined}
                       onClick={() => handlePartial(payment)}
                     >
                       Record payment

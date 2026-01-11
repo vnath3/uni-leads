@@ -72,6 +72,7 @@ export default function AutomationsPage() {
     isMemberRole(memberRole) ||
     (tenant.isPlatformUser && tenant.supportMode !== "none");
   const readOnly = tenant.supportMode === "ro" || !canWrite;
+  const roTooltip = tenant.supportMode === "ro" ? "Disabled in RO" : undefined;
 
   useEffect(() => {
     let active = true;
@@ -291,6 +292,7 @@ export default function AutomationsPage() {
               <button
                 className={`button ${readOnly ? "disabled" : ""}`}
                 disabled={readOnly || isSaving}
+                title={readOnly ? roTooltip : undefined}
                 onClick={() =>
                   saveRule(job.job, { is_enabled: !rule.is_enabled })
                 }
@@ -356,6 +358,7 @@ export default function AutomationsPage() {
               <button
                 className={`button ${readOnly ? "disabled" : ""}`}
                 disabled={readOnly || isSaving}
+                title={readOnly ? roTooltip : undefined}
                 onClick={() => saveRule(job.job, { config })}
               >
                 {isSaving ? "Saving..." : "Save config"}
