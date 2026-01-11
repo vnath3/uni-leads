@@ -225,6 +225,13 @@ serve(async (req) => {
         };
       }
 
+      if ("error" in existingSummary) {
+        delete existingSummary.error;
+      }
+      if ("errors" in existingSummary) {
+        delete existingSummary.errors;
+      }
+
       summaryMeta = existingSummary;
       const { error: restartError } = await supabase
         .from("job_runs")
