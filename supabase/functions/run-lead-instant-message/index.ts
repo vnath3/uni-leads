@@ -12,7 +12,6 @@ type LeadRow = {
 
 type ContactRow = {
   full_name?: string | null;
-  name?: string | null;
   phone?: string | null;
   email?: string | null;
 };
@@ -105,7 +104,7 @@ serve(async (req) => {
 
   const { data: contact, error: contactError } = await supabase
     .from("contacts")
-    .select("full_name, name, phone, email")
+    .select("full_name, phone, email")
     .eq("tenant_id", tenantId)
     .eq("id", contactId)
     .maybeSingle();
@@ -153,8 +152,7 @@ serve(async (req) => {
     });
   }
 
-  const contactName =
-    contactRow.full_name || contactRow.name || contactRow.email || "there";
+  const contactName = contactRow.full_name || contactRow.email || "there";
 
   const { data: templateRow, error: templateError } = await supabase
     .from("message_templates")
