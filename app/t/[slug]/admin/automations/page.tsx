@@ -53,7 +53,7 @@ export default function AutomationsPage() {
   const { tenant, canWrite, memberRole } = useTenantContext();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [rules, setRules] = useState<Record<JobKey, AutomationRule>>({});
+  const [rules, setRules] = useState<Partial<Record<JobKey, AutomationRule>>>({});
   const [saving, setSaving] = useState<Record<JobKey, boolean>>({
     pg_monthly_dues: false,
     clinic_appt_reminders: false
