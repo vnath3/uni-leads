@@ -171,11 +171,50 @@ export default function AutomationsPage() {
       payload.created_by = userId;
     }
 
-    const { data, error: saveError } = await supabase
-      .from("automation_rules")
-      .upsert(payload, { onConflict: "tenant_id,job" })
-      .select("id, job, is_enabled, config, last_run_at")
-      .single();
+    const updateRule = async (ruleId?: string) => {
+      const query = ruleId
+        ? supabase
+            .from("automation_rules")
+            .update(payload)
+            .eq("id", ruleId)
+            .eq("tenant_id", tenant.tenantId)
+        : supabase
+            .from("automation_rules")
+            .update(payload)
+            .eq("tenant_id", tenant.tenantId)
+            .eq("job", job);
+
+      return query.select("id, job, is_enabled, config, last_run_at").single();
+    };
+
+    const insertRule = async () =>
+      supabase
+        .from("automation_rules")
+        .insert(payload)
+        .select("id, job, is_enabled, config, last_run_at")
+        .single();
+
+    const { data, error: saveError } = current.id
+      ? await updateRule(current.id)
+      : await insertRule();
+
+    if (saveError?.code === "23505" && !current.id) {
+      const fallback = await updateRule();
+      if (fallback.error) {
+        setError(fallback.error.message);
+        setSaving((prev) => ({ ...prev, [job]: false }));
+        return;
+      }
+      setRules((prev) => ({
+        ...prev,
+        [job]: {
+          ...(fallback.data as AutomationRule),
+          config: (fallback.data as AutomationRule).config ?? {}
+        }
+      }));
+      setSaving((prev) => ({ ...prev, [job]: false }));
+      return;
+    }
 
     if (saveError) {
       setError(saveError.message);
