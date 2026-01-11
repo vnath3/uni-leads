@@ -42,7 +42,7 @@ const renderTemplate = (template: string, data: Record<string, string>) => {
   return result;
 };
 
-serve(async () => {
+serve(async (req) => {
   const supabase = getServiceClient();
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -52,6 +52,8 @@ serve(async () => {
   const periodStartDate = toDateString(periodStart);
   const periodEndDate = toDateString(periodEnd);
   const runKey = `pg_monthly_dues:${periodStartDate}`;
+  const url = new URL(req.url);
+  const forceRun = url.searchParams.get("force") === "1";
 
   const { error: runInsertError } = await supabase.from("job_runs").insert({
     job: "pg_monthly_dues",
@@ -59,7 +61,12 @@ serve(async () => {
     status: "running"
   });
 
-  if (runInsertError?.code === "23505") {
+  const hasConflict =
+    runInsertError?.code === "23505" ||
+    (runInsertError?.message &&
+      runInsertError.message.toLowerCase().includes("duplicate key value"));
+
+  if (hasConflict) {
     const { data: existingRun, error: existingError } = await supabase
       .from("job_runs")
       .select("status")
@@ -74,9 +81,14 @@ serve(async () => {
       );
     }
 
-    if (existingRun?.status !== "failed") {
+    if (!forceRun && existingRun?.status !== "failed") {
       return new Response(
-        JSON.stringify({ ok: true, skipped: true, run_key: runKey }),
+        JSON.stringify({
+          ok: true,
+          skipped: true,
+          run_key: runKey,
+          status: existingRun?.status ?? "unknown"
+        }),
         { status: 200 }
       );
     }
@@ -98,9 +110,7 @@ serve(async () => {
         { status: 500 }
       );
     }
-  }
-
-  if (runInsertError) {
+  } else if (runInsertError) {
     return new Response(JSON.stringify({ ok: false, error: runInsertError.message }), {
       status: 500
     });
