@@ -121,7 +121,7 @@ export default function AutomationsPage() {
         return;
       }
 
-      const nextRules: Record<JobKey, AutomationRule> = {};
+      const nextRules: Partial<Record<JobKey, AutomationRule>> = {};
       for (const job of availableJobs) {
         const existing = (data as AutomationRule[] | null)?.find(
           (row) => row.job === job.job
