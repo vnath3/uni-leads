@@ -97,8 +97,18 @@ export async function POST(req: Request) {
           detail
         );
       } else {
-        console.info("Lead instant message enqueued", {
-          lead_id: String(leadId)
+        let responseJson: Record<string, unknown> | null = null;
+        try {
+          responseJson = (await response.json()) as Record<string, unknown>;
+        } catch (parseError) {
+          responseJson = null;
+        }
+
+        console.info("Lead instant message response", {
+          lead_id: String(leadId),
+          created_outbox: responseJson?.created_outbox ?? null,
+          skipped_reason: responseJson?.skipped_reason ?? null,
+          outbox_id: responseJson?.outbox_id ?? null
         });
       }
     } catch (error) {
