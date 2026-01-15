@@ -16,6 +16,19 @@ Universal lead capture, multi-tenant.
 - `npm run build`
 - `npm run start`
 
+## Supabase Edge Function Deploy (CLI)
+```pwsh
+cd c:\A_Data\Git_projects\uni-leads\uni-leads
+
+npx supabase --version
+npx supabase login
+npx supabase link --project-ref <your-project-ref>
+npx supabase functions deploy run-lead-instant-message
+
+# Optional: tail logs
+npx supabase functions logs run-lead-instant-message --tail
+```
+
 ## Automation sanity checks
 
 ```sql

@@ -476,11 +476,13 @@ export default function SuperDashboardPage() {
     setCreatingTenant(true);
     setError(null);
 
-    const { data: tenantRow, error: tenantError } = await supabase
-      .from("tenants")
-      .insert({ name, status: "active" })
-      .select("id, name, status, created_at")
-      .single();
+    const { data: tenantResult, error: tenantError } = await supabase
+      .rpc("create_tenant_full", {
+        p_name: name,
+        p_slug: slug,
+        p_status: "active",
+        p_vertical: createForm.preset
+      });
 
     if (tenantError) {
       setError(tenantError.message);
@@ -488,51 +490,26 @@ export default function SuperDashboardPage() {
       return;
     }
 
-    const { error: slugError } = await supabase.from("tenant_identities").insert({
-      tenant_id: tenantRow.id,
-      identity_type: "slug",
-      value: slug,
-      is_primary: true
-    });
+    const createdRow = Array.isArray(tenantResult)
+      ? tenantResult[0]
+      : tenantResult;
 
-    if (slugError) {
-      setError(slugError.message);
-      setCreatingTenant(false);
-      return;
+    const { data: landingData, error: landingError } = await supabase
+      .schema("public")
+      .rpc("get_landing_settings", {
+        p_identity_type: "slug",
+        p_identity_value: slug
+      });
+
+    if (landingError || !landingData) {
+      setError(
+        "Tenant created, but landing settings are missing. Re-run bootstrap or check the RPC."
+      );
     }
 
-    const presetKeys =
-      createForm.preset === "clinic"
-        ? ["landing", "leads", "contacts", "audit", "clinic.appointments"]
-        : ["landing", "leads", "contacts", "audit", "pg.beds", "pg.payments"];
-
-    const keysToEnable = presetKeys.filter((key) =>
-      features.some((feature) => feature.key === key)
-    );
-
-    if (keysToEnable.length) {
-      const nowIso = new Date().toISOString();
-      const rows = keysToEnable.map((featureKey) => ({
-        tenant_id: tenantRow.id,
-        feature_key: featureKey,
-        enabled: true,
-        enabled_by: currentUserId,
-        enabled_at: nowIso,
-        disabled_at: null
-      }));
-      const { error: featureError } = await supabase
-        .from("tenant_features")
-        .insert(rows);
-
-      if (featureError) {
-        setError(featureError.message);
-        setCreatingTenant(false);
-        return;
-      }
+    if (createdRow?.tenant_id && createdRow?.slug) {
+      setSlugByTenant((prev) => ({ ...prev, [createdRow.tenant_id]: createdRow.slug }));
     }
-
-    setTenants((prev) => [tenantRow as Tenant, ...prev]);
-    setSlugByTenant((prev) => ({ ...prev, [tenantRow.id]: slug }));
     setShowCreateTenant(false);
     setCreateForm({ name: "", slug: "", ownerEmail: "", preset: "pg" });
     setCreatingTenant(false);
