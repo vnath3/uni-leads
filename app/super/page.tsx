@@ -46,6 +46,15 @@ type SupportGrant = {
   expires_at: string;
 };
 
+type InviteRole = "owner" | "admin";
+
+type InviteInfo = {
+  role: InviteRole;
+  token: string;
+  expiresAt: string;
+  url: string;
+};
+
 type PlatformCheckResult = {
   data: { is_active: boolean } | null;
   error: string | null;
@@ -77,6 +86,18 @@ const extractFeatureMeta = (features?: TenantFeature["features"]) => {
     return features[0];
   }
   return features;
+};
+
+const buildInviteUrl = (token: string) => {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const baseUrl =
+    envUrl ??
+    (typeof window !== "undefined" ? window.location.origin : "");
+  const normalized = baseUrl.replace(/\/$/, "");
+  if (!normalized) {
+    return `/claim?token=${encodeURIComponent(token)}`;
+  }
+  return `${normalized}/claim?token=${encodeURIComponent(token)}`;
 };
 
 const checkPlatformUser = async (userId: string): Promise<PlatformCheckResult> => {
@@ -144,6 +165,21 @@ export default function SuperDashboardPage() {
   const [toggleBusy, setToggleBusy] = useState<Record<string, boolean>>({});
   const [supportBusy, setSupportBusy] = useState<Record<string, boolean>>({});
   const [copyMessageByTenant, setCopyMessageByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [inviteRoleByTenant, setInviteRoleByTenant] = useState<
+    Record<string, InviteRole>
+  >({});
+  const [inviteInfoByTenant, setInviteInfoByTenant] = useState<
+    Record<string, InviteInfo>
+  >({});
+  const [inviteBusyByTenant, setInviteBusyByTenant] = useState<
+    Record<string, boolean>
+  >({});
+  const [inviteErrorByTenant, setInviteErrorByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [inviteCopyMessageByTenant, setInviteCopyMessageByTenant] = useState<
     Record<string, string>
   >({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -383,6 +419,81 @@ export default function SuperDashboardPage() {
         [tenantId]: "Copy failed"
       }));
     }
+  };
+
+  const handleCopyInvite = async (tenantId: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setInviteCopyMessageByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Invite link copied"
+      }));
+      setTimeout(() => {
+        setInviteCopyMessageByTenant((prev) => {
+          const next = { ...prev };
+          delete next[tenantId];
+          return next;
+        });
+      }, 2000);
+    } catch (copyError) {
+      setInviteCopyMessageByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Copy failed"
+      }));
+    }
+  };
+
+  const handleGenerateInvite = async (tenantId: string) => {
+    if (!session?.user.id) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const role = inviteRoleByTenant[tenantId] ?? "owner";
+    setInviteBusyByTenant((prev) => ({ ...prev, [tenantId]: true }));
+    setInviteErrorByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+
+    const { data, error: inviteError } = await supabase
+      .schema("public")
+      .rpc("create_tenant_invite", {
+        p_tenant_id: tenantId,
+        p_role: role,
+        p_expires_in_days: 7
+      });
+
+    if (inviteError) {
+      setInviteErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: inviteError.message
+      }));
+      setInviteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    const inviteRow = Array.isArray(data) ? data[0] : data;
+    if (!inviteRow?.token || !inviteRow?.expires_at) {
+      setInviteErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Invite created but response is incomplete."
+      }));
+      setInviteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    setInviteInfoByTenant((prev) => ({
+      ...prev,
+      [tenantId]: {
+        role,
+        token: inviteRow.token,
+        expiresAt: inviteRow.expires_at,
+        url: buildInviteUrl(inviteRow.token)
+      }
+    }));
+    setInviteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
   const handleSupportRequest = async (tenantId: string, mode: "RO" | "RW") => {
@@ -636,6 +747,11 @@ export default function SuperDashboardPage() {
             return meta?.category ? `${baseName} (${meta.category})` : baseName;
           });
         const supportStatus = supportAccess[tenant.id];
+        const inviteRole = inviteRoleByTenant[tenant.id] ?? "owner";
+        const inviteInfo = inviteInfoByTenant[tenant.id];
+        const inviteBusy = !!inviteBusyByTenant[tenant.id];
+        const inviteError = inviteErrorByTenant[tenant.id];
+        const inviteCopyMessage = inviteCopyMessageByTenant[tenant.id];
 
         const statusLabel = (tenant.status ?? "unknown").toLowerCase();
         const statusBadgeClass = `status-badge ${statusLabel}`;
@@ -793,6 +909,57 @@ export default function SuperDashboardPage() {
                   Revoke
                 </button>
               </div>
+            </div>
+
+            <div className="section">
+              <div className="section-title">Owner/Admin invite</div>
+              <label className="field">
+                <span>Invite role</span>
+                <select
+                  value={inviteRole}
+                  onChange={(event) =>
+                    setInviteRoleByTenant((prev) => ({
+                      ...prev,
+                      [tenant.id]: event.target.value as InviteRole
+                    }))
+                  }
+                >
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <div className="tag-list">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={inviteBusy}
+                  onClick={() => handleGenerateInvite(tenant.id)}
+                >
+                  {inviteBusy ? "Generating..." : "Generate invite link"}
+                </button>
+                {inviteInfo?.url && (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => handleCopyInvite(tenant.id, inviteInfo.url)}
+                  >
+                    Copy invite link
+                  </button>
+                )}
+                {inviteCopyMessage && <span className="muted">{inviteCopyMessage}</span>}
+              </div>
+              {inviteError && <div className="error">{inviteError}</div>}
+              {inviteInfo?.url && (
+                <>
+                  <label className="field">
+                    <span>Invite link</span>
+                    <input type="text" value={inviteInfo.url} readOnly />
+                  </label>
+                  <p className="muted">
+                    Expires on {formatDateTime(inviteInfo.expiresAt)}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         );
