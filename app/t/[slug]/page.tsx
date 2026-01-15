@@ -68,8 +68,8 @@ const normalizeLeadSchema = (value: unknown) => {
     ? (value as LeadFormSchema).fields
     : [];
 
-  const fields = rawFields
-    .map((field) => {
+  const fields = (rawFields ?? [])
+    .map<LeadFormField | null>((field) => {
       if (!field || typeof field !== "object") return null;
       const key = isNonEmptyString(field.key) ? field.key.trim() : "";
       const label = isNonEmptyString(field.label) ? field.label.trim() : "";
@@ -103,9 +103,10 @@ const normalizeLeadSchema = (value: unknown) => {
     })
     .filter((field): field is LeadFormField => Boolean(field));
 
-  const trustPoints = Array.isArray((value as LeadFormSchema).trust_points)
-    ? (value as LeadFormSchema).trust_points.filter(isNonEmptyString)
+  const rawTrustPoints = Array.isArray((value as LeadFormSchema).trust_points)
+    ? (value as LeadFormSchema).trust_points
     : [];
+  const trustPoints = (rawTrustPoints ?? []).filter(isNonEmptyString);
 
   return { fields, trustPoints };
 };
