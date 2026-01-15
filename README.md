@@ -35,3 +35,12 @@ where deleted_at is null
 group by 1, 2
 having count(*) > 1;
 ```
+
+```sql
+select id, tenant_id, meta->>'tenant_name' as tenant_name, meta->>'tenant_phone' as tenant_phone
+from message_outbox
+where deleted_at is null
+  and idempotency_key like 'lead_instant:%'
+order by created_at desc
+limit 20;
+```

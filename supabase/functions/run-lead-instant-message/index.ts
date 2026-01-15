@@ -22,6 +22,10 @@ type TemplateRow = {
   body: string | null;
 };
 
+type LandingSettingsRow = {
+  contact_phone?: string | null;
+};
+
 const getServiceClient = () => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -152,6 +156,21 @@ serve(async (req) => {
     });
   }
 
+  const { data: landingRow, error: landingError } = await supabase
+    .from("landing_settings")
+    .select("contact_phone")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (landingError) {
+    return new Response(JSON.stringify({ ok: false, error: landingError.message }), {
+      status: 500
+    });
+  }
+
+  const tenantName = tenantRow?.name ?? null;
+  const tenantPhone = (landingRow as LandingSettingsRow | null)?.contact_phone ?? null;
+
   const contactName = contactRow.full_name || contactRow.email || "there";
 
   const { data: templateRow, error: templateError } = await supabase
@@ -173,7 +192,7 @@ serve(async (req) => {
   const leadRow = lead as LeadRow;
   const variables = {
     full_name: String(contactName ?? ""),
-    tenant_name: String(tenantRow?.name ?? ""),
+    tenant_name: String(tenantName ?? ""),
     source: String(leadRow.source ?? ""),
     campaign: String(leadRow.campaign ?? "")
   };
@@ -240,7 +259,11 @@ serve(async (req) => {
     related_id: leadId,
     idempotency_key: idempotencyKey,
     meta: {
-      job: "lead_instant_message"
+      job: "lead_instant_message",
+      source: "lead_capture",
+      template_key: templateRow?.key ?? "lead_instant_ack",
+      tenant_name: tenantName,
+      tenant_phone: tenantPhone
     }
   };
 

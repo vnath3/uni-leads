@@ -40,6 +40,15 @@ const resolveContact = (contact?: OutboxItem["contacts"]) => {
   return resolved.full_name || resolved.email || resolved.phone || "Unknown contact";
 };
 
+const readMetaString = (
+  meta: OutboxItem["meta"],
+  key: string
+): string | null => {
+  if (!meta || typeof meta !== "object") return null;
+  const value = meta[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+};
+
 export default function OutboxPage() {
   const { tenant, canWrite } = useTenantContext();
   const [loading, setLoading] = useState(true);
@@ -225,13 +234,22 @@ export default function OutboxPage() {
         {filteredItems.length === 0 ? (
           <p className="muted">No outbox messages match the filters.</p>
         ) : (
-          filteredItems.map((item) => (
-            <div className="card" key={item.id}>
+          filteredItems.map((item) => {
+            const tenantName = readMetaString(item.meta, "tenant_name");
+            const tenantPhone = readMetaString(item.meta, "tenant_phone");
+            return (
+              <div className="card" key={item.id}>
               <h3>{resolveContact(item.contacts)}</h3>
               <p className="muted">
                 {item.channel} | {item.status} | Scheduled{" "}
                 {formatDateTime(item.scheduled_at)}
               </p>
+              {(tenantName || tenantPhone) && (
+                <p className="muted">
+                  {tenantName ? `Tenant: ${tenantName}` : "Tenant: n/a"}
+                  {tenantPhone ? ` | Phone: ${tenantPhone}` : ""}
+                </p>
+              )}
               {item.subject && <p className="muted">Subject: {item.subject}</p>}
               <p className="muted">{item.body}</p>
               {item.related_table && (
@@ -270,7 +288,8 @@ export default function OutboxPage() {
                 </button>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </>
