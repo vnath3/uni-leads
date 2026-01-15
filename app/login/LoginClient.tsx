@@ -46,10 +46,13 @@ export default function LoginClient() {
 
     setLoading(true);
     if (mode === "signup") {
-      const emailRedirectTo =
-        typeof window !== "undefined"
-          ? new URL(redirectTarget, window.location.origin).toString()
-          : undefined;
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ??
+        (typeof window !== "undefined" ? window.location.origin : "");
+      const normalizedBase = baseUrl.replace(/\/$/, "");
+      const emailRedirectTo = normalizedBase
+        ? new URL(redirectTarget, normalizedBase).toString()
+        : undefined;
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,

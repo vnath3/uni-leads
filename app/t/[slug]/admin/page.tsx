@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useTenantContext } from "@/components/TenantContextProvider";
+import BusinessProfileBanner from "@/components/BusinessProfileBanner";
 
 type Feature = {
   key: string;
@@ -405,6 +406,12 @@ export default function TenantAdminPage() {
 
   return (
     <>
+      <BusinessProfileBanner
+        tenantId={tenant.tenantId}
+        slug={tenant.slug}
+        isOwnerAdmin={isOwnerAdmin}
+        canWrite={canWrite}
+      />
       <div className="card" id="overview">
         <div className="card-header">
           <div>

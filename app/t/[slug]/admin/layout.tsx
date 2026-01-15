@@ -316,6 +316,7 @@ export default function TenantAdminLayout({
               </div>
               <div className="admin-nav-group">
                 <div className="admin-nav-title">System</div>
+                <Link href={`${adminPath}/settings`}>Settings</Link>
                 <Link href={`${adminPath}#features`}>Features</Link>
                 {hasAuditAccess && <Link href={`${adminPath}/audit`}>Audit</Link>}
                 {showSupportNav && <Link href={`${adminPath}#support`}>Support</Link>}

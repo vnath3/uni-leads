@@ -108,6 +108,64 @@ textarea {
   margin-bottom: 12px;
 }
 
+.setup-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.setup-score {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.checklist-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.checklist-status.done {
+  color: #2f6b4a;
+}
+
+.checklist-status.todo {
+  color: #8b1e1e;
+}
+
+.go-live-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.go-live-status {
+  font-weight: 700;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
