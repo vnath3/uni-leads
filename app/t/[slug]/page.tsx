@@ -3,6 +3,19 @@
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+type LeadFormField = {
+  key: string;
+  label: string;
+  type: "text" | "tel" | "email" | "select" | "month" | "date" | "textarea" | "number";
+  required?: boolean;
+  options?: string[];
+};
+
+type LeadFormSchema = {
+  fields?: LeadFormField[];
+  trust_points?: string[];
+};
+
 type LandingSettings = {
   tenant_id?: string;
   name?: string;
@@ -16,6 +29,85 @@ type LandingSettings = {
   campaign?: string;
   lead_campaign?: string;
   default_campaign?: string;
+  lead_form_schema?: LeadFormSchema | null;
+};
+
+const defaultFields: LeadFormField[] = [
+  { key: "full_name", label: "Full Name", type: "text", required: true },
+  { key: "phone", label: "Phone", type: "tel", required: true },
+  {
+    key: "student_type",
+    label: "Student Type",
+    type: "select",
+    options: ["JEE", "NEET", "Other"]
+  },
+  { key: "move_in_month", label: "Move-in month", type: "month" }
+];
+
+const emailField: LeadFormField = {
+  key: "email",
+  label: "Email",
+  type: "email"
+};
+
+const defaultTrustPoints = [
+  "Walking distance to JEE/NEET classes",
+  "Homely food + safe environment",
+  "Limited beds (10 total)"
+];
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+const normalizeLeadSchema = (value: unknown) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { fields: [], trustPoints: [] };
+  }
+
+  const rawFields = Array.isArray((value as LeadFormSchema).fields)
+    ? (value as LeadFormSchema).fields
+    : [];
+
+  const fields = rawFields
+    .map((field) => {
+      if (!field || typeof field !== "object") return null;
+      const key = isNonEmptyString(field.key) ? field.key.trim() : "";
+      const label = isNonEmptyString(field.label) ? field.label.trim() : "";
+      if (!key || !label) return null;
+
+      const typeRaw = isNonEmptyString(field.type) ? field.type.toLowerCase() : "text";
+      const allowedTypes = [
+        "text",
+        "tel",
+        "email",
+        "select",
+        "month",
+        "date",
+        "textarea",
+        "number"
+      ];
+      const type = allowedTypes.includes(typeRaw) ? typeRaw : "text";
+      const required = Boolean(field.required);
+      const options = Array.isArray(field.options)
+        ? field.options.filter(isNonEmptyString)
+        : [];
+      const finalType = type === "select" && options.length === 0 ? "text" : type;
+
+      return {
+        key,
+        label,
+        type: finalType as LeadFormField["type"],
+        required,
+        options: finalType === "select" ? options : undefined
+      };
+    })
+    .filter((field): field is LeadFormField => Boolean(field));
+
+  const trustPoints = Array.isArray((value as LeadFormSchema).trust_points)
+    ? (value as LeadFormSchema).trust_points.filter(isNonEmptyString)
+    : [];
+
+  return { fields, trustPoints };
 };
 
 const resolveCampaign = (settings: LandingSettings | null) => {
@@ -36,13 +128,7 @@ export default function TenantLandingPage({
   const [successId, setSuccessId] = useState<string | null>(null);
   const [showEmail, setShowEmail] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const [formState, setFormState] = useState({
-    fullName: "",
-    phone: "",
-    email: "",
-    studentType: "",
-    moveInMonth: ""
-  });
+  const [formState, setFormState] = useState<Record<string, string>>({});
 
   const isLoading = loading || !settings;
 
@@ -85,6 +171,30 @@ export default function TenantLandingPage({
     };
   }, [params.slug]);
 
+  const schema = normalizeLeadSchema(settings?.lead_form_schema);
+  const hasCustomFields = schema.fields.length > 0;
+  const baseFields = hasCustomFields ? schema.fields : defaultFields;
+  const submitFields = hasCustomFields
+    ? baseFields
+    : showEmail
+      ? [...baseFields, emailField]
+      : baseFields;
+  const trustPoints = schema.trustPoints.length > 0 ? schema.trustPoints : defaultTrustPoints;
+
+  useEffect(() => {
+    setFormState((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const field of submitFields) {
+        if (next[field.key] === undefined) {
+          next[field.key] = "";
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [submitFields]);
+
   const contactPhone = settings?.contact_phone ?? "";
   const cleanPhone = contactPhone.replace(/\D/g, "");
   const whatsappLink = cleanPhone ? `https://wa.me/${cleanPhone}` : null;
@@ -103,26 +213,79 @@ export default function TenantLandingPage({
       ? `${whatsappLink}?text=${encodeURIComponent(whatsappText)}`
       : whatsappLink;
 
+  const updateField = (key: string, value: string) => {
+    setFormState((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const renderField = (field: LeadFormField) => {
+    const value = formState[field.key] ?? "";
+    const label = field.required && !field.label.trim().endsWith("*")
+      ? `${field.label}*`
+      : field.label;
+
+    if (field.type === "select") {
+      return (
+        <label className="field" key={field.key}>
+          <span>{label}</span>
+          <select
+            value={value}
+            required={field.required}
+            onChange={(event) => updateField(field.key, event.target.value)}
+          >
+            <option value="">Select</option>
+            {(field.options ?? []).map((option) => (
+              <option key={`${field.key}-${option}`} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+
+    if (field.type === "textarea") {
+      return (
+        <label className="field" key={field.key}>
+          <span>{label}</span>
+          <textarea
+            rows={3}
+            value={value}
+            required={field.required}
+            onChange={(event) => updateField(field.key, event.target.value)}
+          />
+        </label>
+      );
+    }
+
+    return (
+      <label className="field" key={field.key}>
+        <span>{label}</span>
+        <input
+          type={field.type}
+          value={value}
+          required={field.required}
+          onChange={(event) => updateField(field.key, event.target.value)}
+        />
+      </label>
+    );
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     setSuccessId(null);
     setSubmitting(true);
 
-    const contact: Record<string, unknown> = {
-      full_name: formState.fullName,
-      phone: formState.phone,
-      email: formState.email || null,
-      student_type: formState.studentType || null,
-      move_in_month: formState.moveInMonth || null
-    };
-    const payload: Record<string, unknown> = {
-      full_name: formState.fullName,
-      phone: formState.phone,
-      email: formState.email || null,
-      student_type: formState.studentType || null,
-      move_in_month: formState.moveInMonth || null
-    };
+    const payload: Record<string, unknown> = {};
+    for (const field of submitFields) {
+      const rawValue = formState[field.key] ?? "";
+      const trimmed = rawValue.trim();
+      payload[field.key] = trimmed.length > 0 ? trimmed : null;
+    }
+    const contact: Record<string, unknown> = { ...payload };
 
     const response = await fetch("/api/lead-submit", {
       method: "POST",
@@ -158,13 +321,11 @@ export default function TenantLandingPage({
 
     setSuccessId(leadIdValue ? String(leadIdValue) : "submitted");
     setSubmitting(false);
-    setFormState({
-      fullName: "",
-      phone: "",
-      email: "",
-      studentType: "",
-      moveInMonth: ""
-    });
+    const clearedState: Record<string, string> = {};
+    for (const field of submitFields) {
+      clearedState[field.key] = "";
+    }
+    setFormState(clearedState);
     setShowEmail(false);
   };
 
@@ -231,9 +392,9 @@ export default function TenantLandingPage({
           </a>
         </div>
         <div className="landing-trust">
-          <span>Walking distance to JEE/NEET classes</span>
-          <span>Homely food + safe environment</span>
-          <span>Limited beds (10 total)</span>
+          {trustPoints.map((point, index) => (
+            <span key={`${index}-${point}`}>{point}</span>
+          ))}
         </div>
       </div>
 
@@ -253,85 +414,18 @@ export default function TenantLandingPage({
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <label className="field">
-              <span>Full Name*</span>
-              <input
-                type="text"
-                required
-                value={formState.fullName}
-                onChange={(event) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    fullName: event.target.value
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Phone*</span>
-              <input
-                type="tel"
-                required
-                value={formState.phone}
-                onChange={(event) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    phone: event.target.value
-                  }))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Student Type</span>
-              <select
-                value={formState.studentType}
-                onChange={(event) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    studentType: event.target.value
-                  }))
-                }
-              >
-                <option value="">Select</option>
-                <option value="JEE">JEE</option>
-                <option value="NEET">NEET</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Move-in month</span>
-              <input
-                type="month"
-                value={formState.moveInMonth}
-                onChange={(event) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    moveInMonth: event.target.value
-                  }))
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => setShowEmail((prev) => !prev)}
-            >
-              Add email (optional)
-            </button>
-            {showEmail && (
-              <label className="field">
-                <span>Email</span>
-                <input
-                  type="email"
-                  value={formState.email}
-                  onChange={(event) =>
-                    setFormState((prev) => ({
-                      ...prev,
-                      email: event.target.value
-                    }))
-                  }
-                />
-              </label>
+            {baseFields.map(renderField)}
+            {!hasCustomFields && (
+              <>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setShowEmail((prev) => !prev)}
+                >
+                  Add email (optional)
+                </button>
+                {showEmail && renderField(emailField)}
+              </>
             )}
             <button
               className="button"

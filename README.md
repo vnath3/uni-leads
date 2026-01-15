@@ -1,5 +1,20 @@
 # uni-leads
-Universal Lead capture multi tenant 
+Universal lead capture, multi-tenant.
+
+## Overview
+- Next.js 14 + Supabase app with public landing pages and admin consoles.
+- Public lead capture lives at `/t/[slug]` with secure RPC-backed submit flow.
+- Platform admin lives at `/super`; tenant admin lives at `/t/[slug]/admin`.
+- Feature flags drive module access (PG ops, clinic appointments, automations).
+
+## Documentation
+- Product and engineering overview: `docs/PROJECT_OVERVIEW.md`.
+- Database guide and query rules: `docs/db.md`.
+
+## Development
+- `npm run dev`
+- `npm run build`
+- `npm run start`
 
 ## Automation sanity checks
 
