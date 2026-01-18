@@ -685,6 +685,11 @@ textarea {
   background: rgba(255, 255, 255, 0.95);
 }
 
+.super-table th:last-child,
+.super-table td:last-child {
+  text-align: right;
+}
+
 .super-table td {
   padding: 16px 18px;
   border-top: 1px solid var(--border);
@@ -740,7 +745,17 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.table-actions .button {
+  white-space: nowrap;
+}
+
+.table-actions .more-menu {
+  flex-shrink: 0;
+  margin-left: 4px;
 }
 
 .stat-chips {
@@ -804,6 +819,7 @@ textarea {
   gap: 8px;
   margin-top: 12px;
   flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .more-menu {
@@ -822,6 +838,7 @@ textarea {
   cursor: pointer;
   color: var(--ink);
   font-size: 1rem;
+  line-height: 1;
 }
 
 .menu {
@@ -833,16 +850,17 @@ textarea {
   border-radius: 12px;
   box-shadow: var(--shadow);
   padding: 10px;
-  min-width: 200px;
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  z-index: 40;
+  z-index: 70;
 }
 
 .menu-item {
   background: transparent;
   border: none;
+  width: 100%;
   padding: 8px 10px;
   text-align: left;
   border-radius: 8px;
@@ -865,7 +883,13 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin-top: 6px;
+  padding: 4px 10px 0;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .menu-divider {

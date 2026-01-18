@@ -73,6 +73,14 @@ type TenantStats = {
   lastActivity: string | null;
 };
 
+type DrawerSection =
+  | "overview"
+  | "features"
+  | "support"
+  | "domain"
+  | "invites"
+  | "danger";
+
 const formatDateTime = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -264,6 +272,8 @@ export default function SuperDashboardPage() {
   const [filterHasPending, setFilterHasPending] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeDrawerSection, setActiveDrawerSection] =
+    useState<DrawerSection>("overview");
   const [activeMenuTenantId, setActiveMenuTenantId] = useState<string | null>(null);
   const [tenantStats, setTenantStats] = useState<
     Record<string, TenantStats>
@@ -525,6 +535,12 @@ export default function SuperDashboardPage() {
   useEffect(() => {
     if (drawerOpen && !selectedTenant) {
       setDrawerOpen(false);
+    }
+  }, [drawerOpen, selectedTenant]);
+
+  useEffect(() => {
+    if (drawerOpen && selectedTenant) {
+      setActiveDrawerSection("overview");
     }
   }, [drawerOpen, selectedTenant]);
 
@@ -843,6 +859,7 @@ export default function SuperDashboardPage() {
     setSelectedTenantId(tenantId);
     setDrawerOpen(true);
     setActiveMenuTenantId(null);
+    setActiveDrawerSection("overview");
   };
 
   const closeDrawer = () => {
@@ -1428,6 +1445,12 @@ export default function SuperDashboardPage() {
     }
   };
 
+  const handleSectionClick =
+    (section: DrawerSection) => (event: React.MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      setActiveDrawerSection(section);
+    };
+
   const renderStatsChips = (
     tenantId: string,
     vertical: "PG" | "Clinic" | "Core"
@@ -1941,8 +1964,13 @@ export default function SuperDashboardPage() {
                   </button>
                 </div>
                 <div className="drawer-body">
-                  <details className="drawer-section" open>
-                    <summary>Overview</summary>
+                  <details
+                    className="drawer-section"
+                    open={activeDrawerSection === "overview"}
+                  >
+                    <summary onClick={handleSectionClick("overview")}>
+                      Overview
+                    </summary>
                     <div className="drawer-section-content">
                       <div className="drawer-actions">
                         {slug ? (
@@ -2051,8 +2079,13 @@ export default function SuperDashboardPage() {
                     </div>
                   </details>
 
-                  <details className="drawer-section">
-                    <summary>Features</summary>
+                  <details
+                    className="drawer-section"
+                    open={activeDrawerSection === "features"}
+                  >
+                    <summary onClick={handleSectionClick("features")}>
+                      Features
+                    </summary>
                     <div className="drawer-section-content">
                       <div className="drawer-subsection">
                         <div className="drawer-subtitle">Enabled features</div>
@@ -2125,8 +2158,13 @@ export default function SuperDashboardPage() {
                     </div>
                   </details>
 
-                  <details className="drawer-section">
-                    <summary>Support Access</summary>
+                  <details
+                    className="drawer-section"
+                    open={activeDrawerSection === "support"}
+                  >
+                    <summary onClick={handleSectionClick("support")}>
+                      Support Access
+                    </summary>
                     <div className="drawer-section-content">
                       {supportStatus ? (
                         <p className="muted">
@@ -2166,8 +2204,13 @@ export default function SuperDashboardPage() {
                     </div>
                   </details>
 
-                  <details className="drawer-section">
-                    <summary>Domain</summary>
+                  <details
+                    className="drawer-section"
+                    open={activeDrawerSection === "domain"}
+                  >
+                    <summary onClick={handleSectionClick("domain")}>
+                      Domain
+                    </summary>
                     <div className="drawer-section-content">
                       <p className="muted">
                         Add both apex and www if you want both to work.
@@ -2217,8 +2260,13 @@ export default function SuperDashboardPage() {
                     </div>
                   </details>
 
-                  <details className="drawer-section">
-                    <summary>Admin / Invites</summary>
+                  <details
+                    className="drawer-section"
+                    open={activeDrawerSection === "invites"}
+                  >
+                    <summary onClick={handleSectionClick("invites")}>
+                      Admin / Invites
+                    </summary>
                     <div className="drawer-section-content">
                       <label className="field">
                         <span>Invite role</span>
@@ -2271,8 +2319,13 @@ export default function SuperDashboardPage() {
                     </div>
                   </details>
 
-                  <details className="drawer-section danger-zone">
-                    <summary>Danger Zone</summary>
+                  <details
+                    className="drawer-section danger-zone"
+                    open={activeDrawerSection === "danger"}
+                  >
+                    <summary onClick={handleSectionClick("danger")}>
+                      Danger Zone
+                    </summary>
                     <div className="drawer-section-content">
                       <div className="danger-block">
                         <div className="danger-title">Archive tenant</div>
