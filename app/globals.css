@@ -1798,3 +1798,135 @@ textarea {
     height: 140px;
   }
 }
+
+/* Super Admin create tenant */
+.create-tenant-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.create-tenant-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.create-tenant-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.create-tenant-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.create-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.create-step {
+  border: 1px solid var(--border);
+  background: #fffdf9;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.create-step span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(31, 26, 20, 0.08);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.create-step.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.create-step.active span {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.create-step.complete {
+  border-color: rgba(31, 26, 20, 0.2);
+}
+
+.create-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.create-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.create-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.create-faq-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.create-faq {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fffdf9;
+  display: grid;
+  gap: 10px;
+}
+
+.create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.create-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.create-preview-list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+@media (min-width: 900px) {
+  .create-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

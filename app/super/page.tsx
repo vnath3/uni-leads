@@ -281,14 +281,6 @@ export default function SuperDashboardPage() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [showCreateTenant, setShowCreateTenant] = useState(false);
-  const [creatingTenant, setCreatingTenant] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    name: "",
-    slug: "",
-    ownerEmail: "",
-    preset: "pg"
-  });
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const drawerTouchStartX = useRef<number | null>(null);
@@ -1261,64 +1253,6 @@ export default function SuperDashboardPage() {
     setSupportBusy((prev) => ({ ...prev, [key]: false }));
   };
 
-  const handleCreateTenant = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const currentUserId = session?.user.id;
-    if (!currentUserId) {
-      setError("Session expired. Please sign in again.");
-      return;
-    }
-
-    const name = createForm.name.trim();
-    const slug = createForm.slug.trim().toLowerCase();
-    if (!name || !slug) {
-      setError("Tenant name and slug are required.");
-      return;
-    }
-
-    setCreatingTenant(true);
-    setError(null);
-
-    const { data: tenantResult, error: tenantError } = await supabase
-      .rpc("create_tenant_full", {
-        p_name: name,
-        p_slug: slug,
-        p_status: "active",
-        p_vertical: createForm.preset
-      });
-
-    if (tenantError) {
-      setError(tenantError.message);
-      setCreatingTenant(false);
-      return;
-    }
-
-    const createdRow = Array.isArray(tenantResult)
-      ? tenantResult[0]
-      : tenantResult;
-
-    const { data: landingData, error: landingError } = await supabase
-      .schema("public")
-      .rpc("get_landing_settings", {
-        p_identity_type: "slug",
-        p_identity_value: slug
-      });
-
-    if (landingError || !landingData) {
-      setError(
-        "Tenant created, but landing settings are missing. Re-run bootstrap or check the RPC."
-      );
-    }
-
-    if (createdRow?.tenant_id && createdRow?.slug) {
-      setSlugByTenant((prev) => ({ ...prev, [createdRow.tenant_id]: createdRow.slug }));
-    }
-    setShowCreateTenant(false);
-    setCreateForm({ name: "", slug: "", ownerEmail: "", preset: "pg" });
-    setCreatingTenant(false);
-    await loadData(session);
-  };
-
   const handleToggle = async (
     tenantId: string,
     featureKey: string,
@@ -1610,12 +1544,9 @@ export default function SuperDashboardPage() {
             />
         </div>
         <div className="super-header-right">
-          <button
-            className="button secondary"
-            onClick={() => setShowCreateTenant(true)}
-          >
+          <Link className="button secondary" href="/super/create-tenant">
             Create tenant
-          </button>
+          </Link>
           <div className="super-user">
             <span className="muted">{session?.user.email ?? session?.user.id}</span>
             <button className="button secondary" onClick={handleSignOut}>
@@ -2427,88 +2358,6 @@ export default function SuperDashboardPage() {
 
       </div>
 
-      {showCreateTenant && (
-        <div className="modal-backdrop">
-          <div className="modal" role="dialog" aria-modal="true">
-            <div className="card-header">
-              <div>
-                <h2>Create tenant</h2>
-                <p className="muted">Add a new tenant with defaults.</p>
-              </div>
-              <button
-                type="button"
-                className="button secondary"
-                onClick={() => setShowCreateTenant(false)}
-              >
-                Close
-              </button>
-            </div>
-            <form onSubmit={handleCreateTenant}>
-              <label className="field">
-                <span>Tenant name</span>
-                <input
-                  type="text"
-                  value={createForm.name}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      name: event.target.value
-                    }))
-                  }
-                  required
-                />
-              </label>
-              <label className="field">
-                <span>Slug</span>
-                <input
-                  type="text"
-                  value={createForm.slug}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      slug: event.target.value
-                    }))
-                  }
-                  required
-                />
-              </label>
-              <label className="field">
-                <span>Owner email (optional)</span>
-                <input
-                  type="email"
-                  value={createForm.ownerEmail}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      ownerEmail: event.target.value
-                    }))
-                  }
-                  placeholder="Optional"
-                />
-              </label>
-              <label className="field">
-                <span>Default feature preset</span>
-                <select
-                  value={createForm.preset}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      preset: event.target.value
-                    }))
-                  }
-                >
-                  <option value="pg">PG</option>
-                  <option value="clinic">Clinic</option>
-                  <option value="cab">Cab</option>
-                </select>
-              </label>
-              <button className="button" type="submit" disabled={creatingTenant}>
-                {creatingTenant ? "Creating..." : "Create tenant"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }

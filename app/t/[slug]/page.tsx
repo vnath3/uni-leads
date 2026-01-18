@@ -504,8 +504,18 @@ export default function TenantLandingPage({
   }, [sheetOpen]);
 
   const contactPhone = settings?.contact_phone ?? "";
+  const schemaRecord = asRecord(settings?.lead_form_schema) ?? {};
+  const landingContent = asRecord(schemaRecord.landing) ?? {};
   const cleanPhone = contactPhone.replace(/\D/g, "");
-  const whatsappLink = cleanPhone ? `https://wa.me/${cleanPhone}` : null;
+  const whatsappNumber =
+    pickString(
+      landingContent.whatsapp_number,
+      landingContent.whatsapp,
+      settings?.contact_phone,
+      contactPhone
+    ) ?? "";
+  const cleanWhatsapp = whatsappNumber.replace(/\D/g, "");
+  const whatsappLink = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : null;
   const callLink = contactPhone ? `tel:${contactPhone}` : null;
   const shareLink =
     typeof window !== "undefined"
@@ -514,40 +524,71 @@ export default function TenantLandingPage({
   const tenantName = settings?.brand_name ?? settings?.name ?? params.slug;
   const settingsRecord = asRecord(settings) ?? {};
   const headline =
-    pickString(settingsRecord.headline, settingsRecord.hero_headline, settings?.brand_name) ??
-    tenantName;
+    pickString(
+      landingContent.headline,
+      landingContent.hero_headline,
+      settingsRecord.headline,
+      settingsRecord.hero_headline,
+      settings?.brand_name
+    ) ?? tenantName;
   const subheadline =
-    pickString(settingsRecord.subheadline, settingsRecord.hero_subheadline, settings?.tagline) ??
-    "Fast, friendly, and verified support for your next enquiry.";
+    pickString(
+      landingContent.subheadline,
+      landingContent.hero_subheadline,
+      settingsRecord.subheadline,
+      settingsRecord.hero_subheadline,
+      settings?.tagline
+    ) ?? "Fast, friendly, and verified support for your next enquiry.";
   const trustLine =
-    pickString(settingsRecord.trust_line, settingsRecord.trustline) ??
-    "Fast response on WhatsApp";
+    pickString(
+      landingContent.trust_line,
+      landingContent.trustline,
+      settingsRecord.trust_line,
+      settingsRecord.trustline
+    ) ?? "Fast response on WhatsApp";
   const proofPoints = pickStringArray(
-    settingsRecord.proof_points,
-    settingsRecord.trust_points,
+    landingContent.proof_points,
+    schemaRecord.trust_points,
     trustPoints
   ).slice(0, 3);
   const proofChips = proofPoints.length > 0 ? proofPoints : trustPoints.slice(0, 3);
   const whyChoose = normalizeCards(
-    settingsRecord.why_choose ?? settingsRecord.benefits,
+    landingContent.why_choose ??
+      landingContent.benefits ??
+      settingsRecord.why_choose ??
+      settingsRecord.benefits,
     defaultWhyChoose
   ).slice(0, 4);
   const services = normalizeServices(
-    settingsRecord.services ?? settingsRecord.packages,
+    landingContent.services ??
+      landingContent.packages ??
+      settingsRecord.services ??
+      settingsRecord.packages,
     defaultServices
   ).slice(0, 3);
-  const testimonials = normalizeTestimonials(settingsRecord.testimonials, defaultTestimonials).slice(
-    0,
-    3
-  );
-  const faqs = normalizeFaqs(settingsRecord.faq ?? settingsRecord.faqs, defaultFaqs).slice(0, 4);
+  const testimonials = normalizeTestimonials(
+    landingContent.testimonials ?? settingsRecord.testimonials,
+    defaultTestimonials
+  ).slice(0, 3);
+  const faqs = normalizeFaqs(
+    landingContent.faq ?? landingContent.faqs ?? settingsRecord.faq ?? settingsRecord.faqs,
+    defaultFaqs
+  ).slice(0, 4);
   const gallery = pickStringArray(
+    landingContent.gallery,
+    landingContent.images,
+    landingContent.gallery_images,
     settingsRecord.gallery,
     settingsRecord.images,
     settingsRecord.gallery_images
   ).slice(0, 6);
   const address = settings?.address ?? "";
-  const hours = pickStringArray(settingsRecord.hours, settingsRecord.opening_hours);
+  const hours = pickStringArray(
+    landingContent.hours,
+    landingContent.opening_hours,
+    settingsRecord.hours,
+    settingsRecord.opening_hours
+  );
   const mapLink = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : null;
@@ -555,12 +596,35 @@ export default function TenantLandingPage({
   const themeAccent = isNonEmptyString(settings?.primary_color)
     ? settings?.primary_color.trim()
     : "#b65a3c";
-  const primaryLabel = pickString(settingsRecord.primary_cta_label) ??
-    (whatsappLink ? "WhatsApp" : "Enquire");
+  const primaryCtaType = (() => {
+    const raw = pickString(landingContent.primary_cta_type, settingsRecord.primary_cta_type);
+    const normalized = (raw ?? "").toLowerCase();
+    if (normalized.includes("call")) return "call";
+    if (normalized.includes("enquire") || normalized.includes("inquire")) return "enquire";
+    return "whatsapp";
+  })();
+  const primaryLabel =
+    pickString(landingContent.primary_cta_label, settingsRecord.primary_cta_label) ??
+    (primaryCtaType === "call" ? "Call" : primaryCtaType === "enquire" ? "Enquire" : "WhatsApp");
   const secondaryLabel =
-    pickString(settingsRecord.secondary_cta_label) ??
-    (callLink ? "Call" : mapLink ? "Directions" : "Enquire");
-  const primaryIsEnquire = primaryLabel.toLowerCase() === "enquire";
+    pickString(landingContent.secondary_cta_label, settingsRecord.secondary_cta_label) ??
+    (() => {
+      if (primaryCtaType === "call") {
+        if (whatsappLink) return "WhatsApp";
+        if (mapLink) return "Directions";
+        return "Enquire";
+      }
+      if (primaryCtaType === "whatsapp") {
+        if (callLink) return "Call";
+        if (mapLink) return "Directions";
+        return "Enquire";
+      }
+      if (callLink) return "Call";
+      if (whatsappLink) return "WhatsApp";
+      if (mapLink) return "Directions";
+      return "Enquire";
+    })();
+  const primaryIsEnquire = primaryCtaType === "enquire";
   const showEnquireCta = !primaryIsEnquire;
   const nameValue = nameField ? lastSubmission[nameField.key] : "";
   const timingValue = timingField ? lastSubmission[timingField.key] : "";
@@ -568,6 +632,27 @@ export default function TenantLandingPage({
   const whatsappPrefill = whatsappLink
     ? `${whatsappLink}?text=${encodeURIComponent(whatsappText)}`
     : null;
+  const primaryCtaHref =
+    primaryCtaType === "call"
+      ? callLink
+      : primaryCtaType === "whatsapp"
+        ? whatsappPrefill ?? whatsappLink
+        : null;
+  const secondaryAction = (() => {
+    const normalized = secondaryLabel.toLowerCase();
+    if (normalized.includes("whatsapp")) return "whatsapp";
+    if (normalized.includes("call")) return "call";
+    if (normalized.includes("direction")) return "direction";
+    return "enquire";
+  })();
+  const secondaryHref =
+    secondaryAction === "call"
+      ? callLink
+      : secondaryAction === "whatsapp"
+        ? whatsappPrefill ?? whatsappLink
+        : secondaryAction === "direction"
+          ? mapLink
+          : null;
 
   const openSheet = () => {
     setSheetOpen(true);
@@ -762,27 +847,27 @@ export default function TenantLandingPage({
           <h1>{headline}</h1>
           <p className="landing-subheadline">{subheadline}</p>
           <div className="landing-hero-ctas">
-            {primaryIsEnquire || !whatsappLink ? (
+            {primaryIsEnquire || !primaryCtaHref ? (
               <button type="button" className="button" onClick={openSheet}>
                 {primaryLabel}
               </button>
             ) : (
               <a
                 className="button"
-                href={whatsappPrefill ?? whatsappLink ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                aria-disabled={!whatsappLink}
+                href={primaryCtaHref}
+                target={primaryCtaType === "whatsapp" ? "_blank" : undefined}
+                rel={primaryCtaType === "whatsapp" ? "noreferrer" : undefined}
               >
                 {primaryLabel}
               </a>
             )}
-            {secondaryLabel.toLowerCase().includes("call") && callLink ? (
-              <a className="button secondary" href={callLink} aria-disabled={!callLink}>
-                {secondaryLabel}
-              </a>
-            ) : secondaryLabel.toLowerCase().includes("direction") && mapLink ? (
-              <a className="button secondary" href={mapLink} target="_blank" rel="noreferrer">
+            {secondaryHref ? (
+              <a
+                className="button secondary"
+                href={secondaryHref}
+                target={secondaryAction === "call" ? undefined : "_blank"}
+                rel={secondaryAction === "call" ? undefined : "noreferrer"}
+              >
                 {secondaryLabel}
               </a>
             ) : (
@@ -1068,27 +1153,27 @@ export default function TenantLandingPage({
       </div>
 
       <div className="landing-cta-bar" role="region" aria-label="Quick actions">
-        {primaryIsEnquire || !whatsappLink ? (
+        {primaryIsEnquire || !primaryCtaHref ? (
           <button type="button" className="cta-primary" onClick={openSheet}>
             {primaryLabel}
           </button>
         ) : (
           <a
             className="cta-primary"
-            href={whatsappPrefill ?? whatsappLink ?? "#"}
-            target="_blank"
-            rel="noreferrer"
-            aria-disabled={!whatsappLink}
+            href={primaryCtaHref}
+            target={primaryCtaType === "whatsapp" ? "_blank" : undefined}
+            rel={primaryCtaType === "whatsapp" ? "noreferrer" : undefined}
           >
             {primaryLabel}
           </a>
         )}
-        {secondaryLabel.toLowerCase().includes("call") && callLink ? (
-          <a className="cta-secondary" href={callLink}>
-            {secondaryLabel}
-          </a>
-        ) : secondaryLabel.toLowerCase().includes("direction") && mapLink ? (
-          <a className="cta-secondary" href={mapLink} target="_blank" rel="noreferrer">
+        {secondaryHref ? (
+          <a
+            className="cta-secondary"
+            href={secondaryHref}
+            target={secondaryAction === "call" ? undefined : "_blank"}
+            rel={secondaryAction === "call" ? undefined : "noreferrer"}
+          >
             {secondaryLabel}
           </a>
         ) : (
