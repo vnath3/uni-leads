@@ -104,7 +104,7 @@ export const resolveTenantIdBySlug = async (
       : (data as { tenant_id?: string } | null)?.tenant_id;
 
   if (!tenantId) {
-    throw new Error("Tenant not found.");
+    throw new Error("Tenant unavailable.");
   }
 
   return tenantId;

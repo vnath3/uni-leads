@@ -150,13 +150,13 @@ export default function TenantLandingPage({
       if (!active) return;
 
       if (rpcError) {
-        setError(rpcError.message);
+        setError("This page is unavailable.");
         setLoading(false);
         return;
       }
 
       if (!data) {
-        setError("Tenant not found.");
+        setError("This page is unavailable.");
         setLoading(false);
         return;
       }

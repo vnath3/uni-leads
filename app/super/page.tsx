@@ -209,6 +209,15 @@ export default function SuperDashboardPage() {
   const [domainErrorByTenant, setDomainErrorByTenant] = useState<
     Record<string, string>
   >({});
+  const [archiveInputByTenant, setArchiveInputByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [archiveBusyByTenant, setArchiveBusyByTenant] = useState<
+    Record<string, boolean>
+  >({});
+  const [archiveErrorByTenant, setArchiveErrorByTenant] = useState<
+    Record<string, string>
+  >({});
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
@@ -639,6 +648,64 @@ export default function SuperDashboardPage() {
     setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
+  const handleArchiveTenant = async (tenantId: string, slug?: string) => {
+    if (!session?.user.id) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const input = (archiveInputByTenant[tenantId] ?? "").trim().toLowerCase();
+    const expected = (slug ?? "").trim().toLowerCase();
+
+    if (!expected) {
+      setArchiveErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Slug is missing. Cannot archive."
+      }));
+      return;
+    }
+
+    if (input !== expected) {
+      setArchiveErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Type the exact slug to confirm."
+      }));
+      return;
+    }
+
+    setArchiveBusyByTenant((prev) => ({ ...prev, [tenantId]: true }));
+    setArchiveErrorByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+
+    const { error: archiveError } = await supabase
+      .schema("public")
+      .rpc("archive_tenant", { p_tenant_id: tenantId });
+
+    if (archiveError) {
+      setArchiveErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: archiveError.message
+      }));
+      setArchiveBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    setTenants((prev) =>
+      prev.map((row) =>
+        row.id === tenantId ? { ...row, status: "archived" } : row
+      )
+    );
+    setDomainsByTenant((prev) => ({
+      ...prev,
+      [tenantId]: []
+    }));
+    setArchiveInputByTenant((prev) => ({ ...prev, [tenantId]: "" }));
+    setArchiveBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+  };
+
   const handleSupportRequest = async (tenantId: string, mode: "RO" | "RW") => {
     const currentUserId = session?.user.id;
     if (!currentUserId) {
@@ -899,9 +966,13 @@ export default function SuperDashboardPage() {
         const domainInput = domainInputByTenant[tenant.id] ?? "";
         const domainBusy = !!domainBusyByTenant[tenant.id];
         const domainError = domainErrorByTenant[tenant.id];
+        const archiveInput = archiveInputByTenant[tenant.id] ?? "";
+        const archiveBusy = !!archiveBusyByTenant[tenant.id];
+        const archiveError = archiveErrorByTenant[tenant.id];
 
         const statusLabel = (tenant.status ?? "unknown").toLowerCase();
         const statusBadgeClass = `status-badge ${statusLabel}`;
+        const isArchived = statusLabel === "archived";
 
         return (
           <div
@@ -1108,6 +1179,38 @@ export default function SuperDashboardPage() {
             </div>
 
             <div className="section">
+              <div className="section-title">Archive tenant</div>
+              <p className="muted">
+                Type the tenant slug to confirm. This disables landing and admin access.
+              </p>
+              <label className="field">
+                <span>Confirm slug</span>
+                <input
+                  type="text"
+                  value={archiveInput}
+                  onChange={(event) =>
+                    setArchiveInputByTenant((prev) => ({
+                      ...prev,
+                      [tenant.id]: event.target.value
+                    }))
+                  }
+                  placeholder={slug ?? "slug"}
+                />
+              </label>
+              <div className="tag-list">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={archiveBusy || isArchived}
+                  onClick={() => handleArchiveTenant(tenant.id, slug)}
+                >
+                  {archiveBusy ? "Archiving..." : isArchived ? "Archived" : "Archive tenant"}
+                </button>
+              </div>
+              {archiveError && <div className="error">{archiveError}</div>}
+            </div>
+
+            <div className="section">
               <div className="section-title">Owner/Admin invite</div>
               <label className="field">
                 <span>Invite role</span>
@@ -1233,6 +1336,7 @@ export default function SuperDashboardPage() {
                 >
                   <option value="pg">PG</option>
                   <option value="clinic">Clinic</option>
+                  <option value="cab">Cab</option>
                 </select>
               </label>
               <button className="button" type="submit" disabled={creatingTenant}>
