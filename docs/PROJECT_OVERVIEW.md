@@ -16,6 +16,8 @@ clinic appointments, and automations.
 ### Public lead capture (tenant landing)
 - Route: `/t/[slug]`.
 - Loads landing settings via RPC `public.get_landing_settings(...)`.
+- Landing content (headline, CTA labels, proof chips, FAQs, gallery) is read from
+  `lead_form_schema.landing` when present.
 - Submits lead via `/api/lead-submit` which calls `public.submit_lead(...)`.
 - Rate limiting is enforced inside `submit_lead` using `lead_rate_limits`.
 - After submit, `/api/lead-submit` optionally triggers edge function
@@ -24,8 +26,9 @@ clinic appointments, and automations.
 ### Super admin (platform operator)
 - Routes: `/login` and `/super`.
 - Access gate: `platform_users` row with `is_active=true`.
-- Capabilities: list tenants, search by name or slug, create tenants, toggle
-  features, request or revoke support access, copy landing or admin links.
+- Capabilities: list tenants, search by name or slug, create tenants via
+  `/super/create-tenant`, toggle features, request or revoke support access,
+  copy landing or admin links.
 
 ### Tenant admin (client operator)
 - Routes: `/t/[slug]/admin` and subpages.
@@ -97,13 +100,12 @@ See `docs/db.md` for the full schema guide and query conventions. Notable tables
 SQL checks for duplicate dues and outbox idempotency keys live in `README.md`.
 
 ## Known gaps and notes
-- Super admin "owner email" is collected but not used to create membership or invite.
+- Landing media uploads are not supported yet (URL-only placeholders in create flow).
 - Automated tests are not present in this repo.
 - Core schema for tenants, contacts, leads, audit log, and RLS helper functions is
   assumed to exist in Supabase (see `docs/db.md`).
 
 ## Whats New (append entries here)
-### YYYY-MM-DD
-- Added:
-- Changed:
-- Fixed:
+### 2026-01-18
+- Added: `/super/create-tenant` multi-step flow to configure landing content at creation time.
+- Changed: `create_tenant_full` accepts optional landing content and trust points.

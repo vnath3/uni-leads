@@ -4,6 +4,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  interpolateTemplate,
+  resolveLandingConfig,
+  type LandingSettings
+} from "@/lib/landingConfig";
 
 type LeadFormField = {
   key: string;
@@ -16,44 +21,7 @@ type LeadFormField = {
 type LeadFormSchema = {
   fields?: LeadFormField[];
   trust_points?: string[];
-};
-
-type LandingSettings = {
-  tenant_id?: string;
-  name?: string;
-  brand_name?: string;
-  tagline?: string;
-  logo_url?: string;
-  primary_color?: string;
-  contact_email?: string;
-  contact_phone?: string;
-  address?: string;
-  campaign?: string;
-  lead_campaign?: string;
-  default_campaign?: string;
-  lead_form_schema?: LeadFormSchema | null;
-};
-
-type ContentCard = {
-  title: string;
-  description: string;
-};
-
-type ServiceItem = {
-  title: string;
-  description: string;
-  price?: string;
-};
-
-type Testimonial = {
-  quote: string;
-  name: string;
-  meta?: string;
-};
-
-type FaqItem = {
-  question: string;
-  answer: string;
+  landing?: Record<string, unknown>;
 };
 
 const defaultFields: LeadFormField[] = [
@@ -74,110 +42,8 @@ const emailField: LeadFormField = {
   type: "email"
 };
 
-const defaultTrustPoints = [
-  "Fast response on WhatsApp",
-  "Verified local team",
-  "Transparent pricing"
-];
-
-const defaultWhyChoose: ContentCard[] = [
-  {
-    title: "Fast response",
-    description: "Replies in minutes via WhatsApp or call."
-  },
-  {
-    title: "Verified and trusted",
-    description: "Every enquiry gets a personal follow-up."
-  },
-  {
-    title: "Flexible options",
-    description: "Plans that match your budget and timing."
-  },
-  {
-    title: "Prime location",
-    description: "Easy to reach and close to key hubs."
-  }
-];
-
-const defaultServices: ServiceItem[] = [
-  {
-    title: "Starter Plan",
-    description: "Essentials for a quick start.",
-    price: "From Rs. 4,999"
-  },
-  {
-    title: "Standard Plan",
-    description: "Most popular, balanced features.",
-    price: "From Rs. 7,999"
-  },
-  {
-    title: "Premium Plan",
-    description: "All-inclusive support and upgrades.",
-    price: "From Rs. 11,999"
-  }
-];
-
-const defaultTestimonials: Testimonial[] = [
-  {
-    quote: "We got a response within minutes and booked right away.",
-    name: "Aarav",
-    meta: "Parent"
-  },
-  {
-    quote: "Clean, calm, and exactly as promised.",
-    name: "Meera",
-    meta: "Student"
-  },
-  {
-    quote: "Transparent pricing and great follow-through.",
-    name: "Dr. Anita",
-    meta: "Clinic lead"
-  }
-];
-
-const defaultFaqs: FaqItem[] = [
-  {
-    question: "How fast do you respond?",
-    answer: "Typically within 10 minutes on WhatsApp."
-  },
-  {
-    question: "Can I schedule a visit?",
-    answer: "Yes, pick a time that suits you and we will confirm."
-  },
-  {
-    question: "What details do you need to get started?",
-    answer: "Just your name, phone, and preferred timing."
-  },
-  {
-    question: "Can I change plans later?",
-    answer: "Yes, upgrades are available anytime."
-  }
-];
-
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
-
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-};
-
-const pickString = (...values: unknown[]) => {
-  for (const value of values) {
-    if (isNonEmptyString(value)) return value.trim();
-  }
-  return null;
-};
-
-const pickStringArray = (...values: unknown[]) => {
-  for (const value of values) {
-    if (Array.isArray(value)) {
-      const filtered = value.filter(isNonEmptyString);
-      if (filtered.length > 0) return filtered;
-    }
-  }
-  return [];
-};
 const normalizeLeadSchema = (value: unknown) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { fields: [], trustPoints: [] };
@@ -236,91 +102,6 @@ const resolveCampaign = (settings: LandingSettings | null) => {
   return campaign && campaign.trim().length > 0 ? campaign : "demo";
 };
 
-const normalizeCards = (value: unknown, fallback: ContentCard[]) => {
-  if (!Array.isArray(value)) return fallback;
-  const cards = value
-    .map<ContentCard | null>((item) => {
-      if (isNonEmptyString(item)) {
-        return { title: item.trim(), description: "Details available on request." };
-      }
-      const record = asRecord(item);
-      if (!record) return null;
-      const title = pickString(record.title, record.heading, record.name);
-      const description = pickString(record.description, record.detail, record.subtitle);
-      if (!title) return null;
-      return {
-        title,
-        description: description ?? "Details available on request."
-      };
-    })
-    .filter((card): card is ContentCard => Boolean(card));
-  return cards.length > 0 ? cards : fallback;
-};
-
-const normalizeServices = (value: unknown, fallback: ServiceItem[]) => {
-  if (!Array.isArray(value)) return fallback;
-  const services = value
-    .map<ServiceItem | null>((item) => {
-      if (isNonEmptyString(item)) {
-        return { title: item.trim(), description: "Tailored option available." };
-      }
-      const record = asRecord(item);
-      if (!record) return null;
-      const title = pickString(record.title, record.heading, record.name);
-      const description = pickString(record.description, record.detail, record.subtitle);
-      if (!title) return null;
-      return {
-        title,
-        description: description ?? "Tailored option available.",
-        price: pickString(record.price, record.rate, record.cost) ?? undefined
-      };
-    })
-    .filter((service): service is ServiceItem => Boolean(service));
-  return services.length > 0 ? services : fallback;
-};
-
-const normalizeTestimonials = (value: unknown, fallback: Testimonial[]) => {
-  if (!Array.isArray(value)) return fallback;
-  const testimonials = value
-    .map<Testimonial | null>((item) => {
-      if (isNonEmptyString(item)) {
-        return { quote: item.trim(), name: "Customer" };
-      }
-      const record = asRecord(item);
-      if (!record) return null;
-      const quote = pickString(record.quote, record.text, record.feedback);
-      const name = pickString(record.name, record.author);
-      if (!quote) return null;
-      return {
-        quote,
-        name: name ?? "Customer",
-        meta: pickString(record.meta, record.role) ?? undefined
-      };
-    })
-    .filter((item): item is Testimonial => Boolean(item));
-  return testimonials.length > 0 ? testimonials : fallback;
-};
-
-const normalizeFaqs = (value: unknown, fallback: FaqItem[]) => {
-  if (!Array.isArray(value)) return fallback;
-  const faqs = value
-    .map<FaqItem | null>((item) => {
-      if (isNonEmptyString(item)) {
-        return { question: item.trim(), answer: "We can share details on request." };
-      }
-      const record = asRecord(item);
-      if (!record) return null;
-      const question = pickString(record.question, record.title);
-      const answer = pickString(record.answer, record.detail);
-      if (!question) return null;
-      return {
-        question,
-        answer: answer ?? "We can share details on request."
-      };
-    })
-    .filter((item): item is FaqItem => Boolean(item));
-  return faqs.length > 0 ? faqs : fallback;
-};
 
 const splitFields = (fields: LeadFormField[]) => {
   const selected: LeadFormField[] = [];
@@ -381,23 +162,6 @@ const splitFields = (fields: LeadFormField[]) => {
   return { stepOneFields, stepTwoFields, nameField, timingField, phoneField };
 };
 
-const buildWhatsAppText = (
-  tenantName: string,
-  nameValue: string | undefined,
-  timingValue: string | undefined
-) => {
-  const parts = [];
-  if (nameValue) {
-    parts.push(`Hi, I am ${nameValue}.`);
-  } else {
-    parts.push("Hi.");
-  }
-  parts.push(`I just submitted an enquiry for ${tenantName}.`);
-  if (timingValue) {
-    parts.push(`Preferred timing: ${timingValue}.`);
-  }
-  return parts.join(" ");
-};
 export default function TenantLandingPage({
   params
 }: {
@@ -416,6 +180,8 @@ export default function TenantLandingPage({
   const [formStep, setFormStep] = useState<1 | 2>(1);
   const [lastSubmission, setLastSubmission] = useState<Record<string, string>>({});
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const landingRef = useRef<HTMLDivElement | null>(null);
+  const ctaBarRef = useRef<HTMLDivElement | null>(null);
 
   const isLoading = loading || !settings;
 
@@ -465,7 +231,6 @@ export default function TenantLandingPage({
   const stepTwoFields =
     !hasCustomFields && showEmail ? [...baseStepTwoFields, emailField] : baseStepTwoFields;
   const submitFields = [...stepOneFields, ...stepTwoFields];
-  const trustPoints = schema.trustPoints.length > 0 ? schema.trustPoints : defaultTrustPoints;
 
   useEffect(() => {
     setFormState((prev) => {
@@ -503,134 +268,66 @@ export default function TenantLandingPage({
     };
   }, [sheetOpen]);
 
-  const contactPhone = settings?.contact_phone ?? "";
-  const schemaRecord = asRecord(settings?.lead_form_schema) ?? {};
-  const landingContent = asRecord(schemaRecord.landing) ?? {};
-  const cleanPhone = contactPhone.replace(/\D/g, "");
-  const whatsappNumber =
-    pickString(
-      landingContent.whatsapp_number,
-      landingContent.whatsapp,
-      settings?.contact_phone,
-      contactPhone
-    ) ?? "";
-  const cleanWhatsapp = whatsappNumber.replace(/\D/g, "");
+  const resolvedConfig = resolveLandingConfig(settings, { slug: params.slug });
+  const { brand, contact, cta, hero, sections, footer } = resolvedConfig;
+  const themeAccent = isNonEmptyString(settings?.primary_color)
+    ? settings?.primary_color.trim()
+    : "#b65a3c";
+  const tenantName = brand.name || params.slug;
+  const contactPhone = contact.phone;
+  const contactEmail = contact.email;
+  const addressLine = contact.address_line;
+  const hours = contact.hours;
+  const mapLink = isNonEmptyString(contact.map_url) ? contact.map_url : null;
+  const cleanWhatsapp = contact.whatsapp.replace(/\D/g, "");
   const whatsappLink = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : null;
   const callLink = contactPhone ? `tel:${contactPhone}` : null;
   const shareLink =
     typeof window !== "undefined"
       ? `${window.location.origin}/t/${params.slug}`
       : "";
-  const tenantName = settings?.brand_name ?? settings?.name ?? params.slug;
-  const settingsRecord = asRecord(settings) ?? {};
-  const headline =
-    pickString(
-      landingContent.headline,
-      landingContent.hero_headline,
-      settingsRecord.headline,
-      settingsRecord.hero_headline,
-      settings?.brand_name
-    ) ?? tenantName;
-  const subheadline =
-    pickString(
-      landingContent.subheadline,
-      landingContent.hero_subheadline,
-      settingsRecord.subheadline,
-      settingsRecord.hero_subheadline,
-      settings?.tagline
-    ) ?? "Fast, friendly, and verified support for your next enquiry.";
-  const trustLine =
-    pickString(
-      landingContent.trust_line,
-      landingContent.trustline,
-      settingsRecord.trust_line,
-      settingsRecord.trustline
-    ) ?? "Fast response on WhatsApp";
-  const proofPoints = pickStringArray(
-    landingContent.proof_points,
-    schemaRecord.trust_points,
-    trustPoints
-  ).slice(0, 3);
-  const proofChips = proofPoints.length > 0 ? proofPoints : trustPoints.slice(0, 3);
-  const whyChoose = normalizeCards(
-    landingContent.why_choose ??
-      landingContent.benefits ??
-      settingsRecord.why_choose ??
-      settingsRecord.benefits,
-    defaultWhyChoose
-  ).slice(0, 4);
-  const services = normalizeServices(
-    landingContent.services ??
-      landingContent.packages ??
-      settingsRecord.services ??
-      settingsRecord.packages,
-    defaultServices
-  ).slice(0, 3);
-  const testimonials = normalizeTestimonials(
-    landingContent.testimonials ?? settingsRecord.testimonials,
-    defaultTestimonials
-  ).slice(0, 3);
-  const faqs = normalizeFaqs(
-    landingContent.faq ?? landingContent.faqs ?? settingsRecord.faq ?? settingsRecord.faqs,
-    defaultFaqs
-  ).slice(0, 4);
-  const gallery = pickStringArray(
-    landingContent.gallery,
-    landingContent.images,
-    landingContent.gallery_images,
-    settingsRecord.gallery,
-    settingsRecord.images,
-    settingsRecord.gallery_images
-  ).slice(0, 6);
-  const address = settings?.address ?? "";
-  const hours = pickStringArray(
-    landingContent.hours,
-    landingContent.opening_hours,
-    settingsRecord.hours,
-    settingsRecord.opening_hours
-  );
-  const mapLink = address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    : null;
-  const contactEmail = settings?.contact_email ?? "";
-  const themeAccent = isNonEmptyString(settings?.primary_color)
-    ? settings?.primary_color.trim()
-    : "#b65a3c";
-  const primaryCtaType = (() => {
-    const raw = pickString(landingContent.primary_cta_type, settingsRecord.primary_cta_type);
-    const normalized = (raw ?? "").toLowerCase();
-    if (normalized.includes("call")) return "call";
-    if (normalized.includes("enquire") || normalized.includes("inquire")) return "enquire";
-    return "whatsapp";
-  })();
+  const proofChips = hero.proof_chips.slice(0, 3);
+  const snapshotBullets = hero.snapshot.bullets.slice(0, 3);
+  const heroGalleryStrip = hero.media.gallery_strip_enabled
+    ? sections.gallery.images.slice(0, 3)
+    : [];
+  const primaryCtaType = cta.primary.type;
   const primaryLabel =
-    pickString(landingContent.primary_cta_label, settingsRecord.primary_cta_label) ??
-    (primaryCtaType === "call" ? "Call" : primaryCtaType === "enquire" ? "Enquire" : "WhatsApp");
-  const secondaryLabel =
-    pickString(landingContent.secondary_cta_label, settingsRecord.secondary_cta_label) ??
-    (() => {
-      if (primaryCtaType === "call") {
-        if (whatsappLink) return "WhatsApp";
-        if (mapLink) return "Directions";
-        return "Enquire";
-      }
-      if (primaryCtaType === "whatsapp") {
-        if (callLink) return "Call";
-        if (mapLink) return "Directions";
-        return "Enquire";
-      }
-      if (callLink) return "Call";
-      if (whatsappLink) return "WhatsApp";
-      if (mapLink) return "Directions";
-      return "Enquire";
-    })();
-  const primaryIsEnquire = primaryCtaType === "enquire";
-  const showEnquireCta = !primaryIsEnquire;
-  const nameValue = nameField ? lastSubmission[nameField.key] : "";
-  const timingValue = timingField ? lastSubmission[timingField.key] : "";
-  const whatsappText = buildWhatsAppText(tenantName, nameValue, timingValue);
+    cta.primary.label ||
+    (primaryCtaType === "call"
+      ? "Call"
+      : primaryCtaType === "enquire"
+        ? "Enquire"
+        : "WhatsApp");
+  const getFieldValue = (field?: LeadFormField | null) => {
+    if (!field) return "";
+    return lastSubmission[field.key] ?? formState[field.key] ?? "";
+  };
+  const nameValue = getFieldValue(nameField);
+  const timingValue = getFieldValue(timingField);
+  const phoneValue = getFieldValue(phoneField);
+  const tokenValues: Record<string, string> = {
+    name: nameValue,
+    phone: phoneValue,
+    brand_name: brand.name,
+    vertical: resolvedConfig.vertical,
+    when_needed: timingValue
+  };
+  for (const field of submitFields) {
+    const key = field.key.toLowerCase();
+    if (tokenValues[key] !== undefined) continue;
+    tokenValues[key] = lastSubmission[field.key] ?? formState[field.key] ?? "";
+  }
+  const prefillTemplate =
+    cta.primary.prefill_template || "Hi, I want to enquire about {brand_name}.";
+  const whatsappText = whatsappLink
+    ? interpolateTemplate(prefillTemplate, tokenValues)
+    : "";
+  const trimmedWhatsAppText = whatsappText.trim();
   const whatsappPrefill = whatsappLink
-    ? `${whatsappLink}?text=${encodeURIComponent(whatsappText)}`
+    ? trimmedWhatsAppText
+      ? `${whatsappLink}?text=${encodeURIComponent(trimmedWhatsAppText)}`
+      : whatsappLink
     : null;
   const primaryCtaHref =
     primaryCtaType === "call"
@@ -638,21 +335,77 @@ export default function TenantLandingPage({
       : primaryCtaType === "whatsapp"
         ? whatsappPrefill ?? whatsappLink
         : null;
+  const hasWhatsApp = Boolean(whatsappLink);
+  const hasPhone = Boolean(callLink);
+  const hasMap = Boolean(mapLink);
   const secondaryAction = (() => {
-    const normalized = secondaryLabel.toLowerCase();
-    if (normalized.includes("whatsapp")) return "whatsapp";
-    if (normalized.includes("call")) return "call";
-    if (normalized.includes("direction")) return "direction";
+    if (cta.secondary.type === "call" && hasPhone) return "call";
+    if (cta.secondary.type === "directions" && hasMap) return "directions";
+    if (cta.secondary.type === "pricing") return "pricing";
+    if (cta.secondary.type === "enquire") return "enquire";
+
+    if (primaryCtaType === "call") {
+      if (hasWhatsApp) return "whatsapp";
+      if (hasMap) return "directions";
+      return "enquire";
+    }
+    if (primaryCtaType === "whatsapp") {
+      if (hasPhone) return "call";
+      if (hasMap) return "directions";
+      return "enquire";
+    }
+    if (hasPhone) return "call";
+    if (hasWhatsApp) return "whatsapp";
+    if (hasMap) return "directions";
     return "enquire";
   })();
+  const secondaryLabel =
+    cta.secondary.label ||
+    (secondaryAction === "whatsapp"
+      ? "WhatsApp"
+      : secondaryAction === "call"
+        ? "Call"
+        : secondaryAction === "directions"
+          ? "Directions"
+          : secondaryAction === "pricing"
+            ? "Pricing"
+            : "Enquire");
   const secondaryHref =
     secondaryAction === "call"
       ? callLink
       : secondaryAction === "whatsapp"
         ? whatsappPrefill ?? whatsappLink
-        : secondaryAction === "direction"
+        : secondaryAction === "directions"
           ? mapLink
           : null;
+  const primaryIsEnquire = primaryCtaType === "enquire" || !primaryCtaHref;
+  const showEnquireCta = cta.sticky_bar.show_enquire && !primaryIsEnquire;
+  const ctaBarEnabled = cta.sticky_bar.enabled;
+
+  const handlePricing = () => {
+    const servicesSection = document.getElementById("landing-services");
+    servicesSection?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleSecondaryClick = () => {
+    if (secondaryAction === "pricing") {
+      handlePricing();
+      return;
+    }
+    openSheet();
+  };
+
+  useEffect(() => {
+    const updateCtaHeight = () => {
+      const height = ctaBarRef.current?.offsetHeight ?? 0;
+      if (landingRef.current) {
+        landingRef.current.style.setProperty("--landing-cta-height", `${height}px`);
+      }
+    };
+    updateCtaHeight();
+    window.addEventListener("resize", updateCtaHeight);
+    return () => window.removeEventListener("resize", updateCtaHeight);
+  }, [ctaBarEnabled, primaryLabel, secondaryLabel, showEnquireCta]);
 
   const openSheet = () => {
     setSheetOpen(true);
@@ -809,6 +562,27 @@ export default function TenantLandingPage({
     return Boolean(formState[field.key]?.trim());
   });
   const hasStepTwo = stepTwoFields.length > 0;
+  const showWhyChoose =
+    sections.why_choose.enabled && sections.why_choose.items.length > 0;
+  const showGallery =
+    sections.gallery.enabled && sections.gallery.images.length > 0;
+  const showServices =
+    sections.services.enabled && sections.services.items.length > 0;
+  const showTestimonials =
+    sections.testimonials.enabled && sections.testimonials.items.length > 0;
+  const showFaq = sections.faq.enabled && sections.faq.items.length > 0;
+  const showContactCard =
+    sections.location.show_contact_card &&
+    (contactPhone || contactEmail || hours.length > 0);
+  const showVisitCard = Boolean(mapLink) || isNonEmptyString(addressLine);
+  const showLocation = sections.location.enabled && (showVisitCard || showContactCard);
+  const showShare = footer.show_share;
+  const showDeveloperCredit =
+    footer.developer_credit.enabled &&
+    isNonEmptyString(footer.developer_credit.label);
+  const showFooter = showShare || showDeveloperCredit;
+  const shouldShowHeader = (title: string, subtitle: string) =>
+    isNonEmptyString(title) || isNonEmptyString(subtitle);
 
   if (isLoading) {
     return (
@@ -831,6 +605,7 @@ export default function TenantLandingPage({
   return (
     <div
       className="landing"
+      ref={landingRef}
       style={
         {
           "--landing-accent": themeAccent,
@@ -843,9 +618,11 @@ export default function TenantLandingPage({
           {settings?.logo_url && (
             <img src={settings.logo_url} alt={tenantName} className="landing-logo" />
           )}
-          <p className="landing-eyebrow">Trusted local team</p>
-          <h1>{headline}</h1>
-          <p className="landing-subheadline">{subheadline}</p>
+          {isNonEmptyString(brand.badge) && (
+            <p className="landing-eyebrow">{brand.badge}</p>
+          )}
+          <h1>{hero.headline}</h1>
+          <p className="landing-subheadline">{hero.subheadline}</p>
           <div className="landing-hero-ctas">
             {primaryIsEnquire || !primaryCtaHref ? (
               <button type="button" className="button" onClick={openSheet}>
@@ -871,177 +648,293 @@ export default function TenantLandingPage({
                 {secondaryLabel}
               </a>
             ) : (
-              <button type="button" className="button secondary" onClick={openSheet}>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={handleSecondaryClick}
+              >
                 {secondaryLabel}
               </button>
             )}
           </div>
-          <div className="landing-trust-line">{trustLine}</div>
-          <div className="landing-proof-chips">
-            {proofChips.map((point) => (
-              <span className="landing-chip" key={point}>
-                {point}
-              </span>
-            ))}
-          </div>
+          {proofChips.length > 0 && (
+            <div className="landing-proof-chips">
+              {proofChips.map((point) => (
+                <span className="landing-chip" key={point}>
+                  {point}
+                </span>
+              ))}
+            </div>
+          )}
+          {heroGalleryStrip.length > 0 && (
+            <div className="landing-hero-strip">
+              {heroGalleryStrip.map((image, index) => (
+                <img
+                  key={`${image.url}-${index}`}
+                  src={image.url}
+                  alt={`${tenantName} preview ${index + 1}`}
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          )}
         </div>
         <div className="landing-hero-card">
-          <div className="landing-hero-card-title">Quick snapshot</div>
-          <div className="landing-hero-card-list">
-            {trustPoints.slice(0, 3).map((point) => (
-              <div className="landing-hero-card-item" key={point}>
-                <span className="landing-dot" aria-hidden="true" />
-                <span>{point}</span>
-              </div>
-            ))}
-          </div>
+          {hero.media.hero_image_url && (
+            <div className="landing-hero-media">
+              <img
+                src={hero.media.hero_image_url}
+                alt={`${tenantName} hero`}
+                loading="lazy"
+              />
+            </div>
+          )}
+          {isNonEmptyString(hero.snapshot.title) && (
+            <div className="landing-hero-card-title">{hero.snapshot.title}</div>
+          )}
+          {snapshotBullets.length > 0 && (
+            <div className="landing-hero-card-list">
+              {snapshotBullets.map((point) => (
+                <div className="landing-hero-card-item" key={point}>
+                  <span className="landing-dot" aria-hidden="true" />
+                  <span>{point}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <button type="button" className="button secondary" onClick={openSheet}>
             Enquire now
           </button>
         </div>
       </section>
 
-      <section className="landing-section">
-        <div className="landing-section-header">
-          <h2>Why choose us</h2>
-          <p className="muted">The details that matter before you decide.</p>
-        </div>
-        <div className="landing-grid">
-          {whyChoose.map((item) => (
-            <div className="landing-card" key={item.title}>
-              <h3>{item.title}</h3>
-              <p className="muted">{item.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {gallery.length > 0 && (
+      {showWhyChoose && (
         <section className="landing-section">
-          <div className="landing-section-header">
-            <h2>Gallery</h2>
-            <p className="muted">A quick look at the experience.</p>
-          </div>
-          <div className="landing-gallery">
-            {gallery.map((src, index) => (
-              <img
-                key={`${src}-${index}`}
-                src={src}
-                alt={`${tenantName} gallery ${index + 1}`}
-                loading="lazy"
-              />
+          {shouldShowHeader(
+            sections.why_choose.title,
+            sections.why_choose.subtitle
+          ) && (
+            <div className="landing-section-header">
+              <h2>{sections.why_choose.title}</h2>
+              {isNonEmptyString(sections.why_choose.subtitle) && (
+                <p className="muted">{sections.why_choose.subtitle}</p>
+              )}
+            </div>
+          )}
+          <div className="landing-grid">
+            {sections.why_choose.items.map((item) => (
+              <div className="landing-card" key={item.title}>
+                <h3>{item.title}</h3>
+                {isNonEmptyString(item.body) && (
+                  <p className="muted">{item.body}</p>
+                )}
+              </div>
             ))}
           </div>
         </section>
       )}
 
-      <section className="landing-section">
-        <div className="landing-section-header">
-          <h2>Services and packages</h2>
-          <p className="muted">Choose the plan that fits your needs.</p>
-        </div>
-        <div className="landing-grid">
-          {services.map((service) => (
-            <div className="landing-card" key={service.title}>
-              <div className="landing-card-header">
-                <h3>{service.title}</h3>
-                {service.price && <span className="landing-price">{service.price}</span>}
-              </div>
-              <p className="muted">{service.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="landing-section">
-        <div className="landing-section-header">
-          <h2>People love the experience</h2>
-          <p className="muted">Recent feedback from real visitors.</p>
-        </div>
-        <div className="landing-grid">
-          {testimonials.map((item) => (
-            <div className="landing-card" key={item.quote}>
-              <p className="landing-quote">"{item.quote}"</p>
-              <div className="landing-testimonial-meta">
-                <strong>{item.name}</strong>
-                {item.meta && <span className="muted">{item.meta}</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="landing-section">
-        <div className="landing-section-header">
-          <h2>FAQ</h2>
-          <p className="muted">Quick answers to common questions.</p>
-        </div>
-        <div className="landing-faq">
-          {faqs.map((item) => (
-            <details className="landing-faq-item" key={item.question}>
-              <summary>{item.question}</summary>
-              <p className="muted">{item.answer}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      {(address || contactPhone || contactEmail || hours.length > 0) && (
+      {showGallery && (
         <section className="landing-section">
-          <div className="landing-section-header">
-            <h2>Location and hours</h2>
-            <p className="muted">Find us or reach out anytime.</p>
-          </div>
-          <div className="landing-grid two-col">
-            <div className="landing-card">
-              <h3>Visit us</h3>
-              <p className="muted">{address || "Address available on request."}</p>
-              {mapLink && (
-                <a className="button secondary" href={mapLink} target="_blank" rel="noreferrer">
-                  Directions
-                </a>
-              )}
+          {shouldShowHeader(sections.gallery.title, "A quick look at the experience.") && (
+            <div className="landing-section-header">
+              <h2>{sections.gallery.title}</h2>
+              <p className="muted">A quick look at the experience.</p>
             </div>
-            <div className="landing-card">
-              <h3>Contact</h3>
-              <div className="landing-contact-list">
-                {contactPhone && (
-                  <a className="landing-contact-link" href={callLink ?? "#"}>
-                    {contactPhone}
-                  </a>
+          )}
+          <div className="landing-gallery">
+            {sections.gallery.images.map((image, index) => (
+              <figure className="landing-gallery-item" key={`${image.url}-${index}`}>
+                <img
+                  src={image.url}
+                  alt={`${tenantName} gallery ${index + 1}`}
+                  loading="lazy"
+                />
+                {isNonEmptyString(image.caption) && (
+                  <figcaption className="muted">{image.caption}</figcaption>
                 )}
-                {contactEmail && (
-                  <a className="landing-contact-link" href={`mailto:${contactEmail}`}>
-                    {contactEmail}
-                  </a>
-                )}
-                {hours.length > 0 && (
-                  <div className="landing-hours">
-                    {hours.map((slot) => (
-                      <span key={slot}>{slot}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+              </figure>
+            ))}
           </div>
         </section>
       )}
 
-      <footer className="landing-footer">
-        <div className="landing-footer-card">
-          <div>
-            <div className="landing-footer-title">Share this page</div>
-            <p className="muted">Send this link to parents, patients, or friends.</p>
+      {showServices && (
+        <section className="landing-section" id="landing-services">
+          {shouldShowHeader(sections.services.title, sections.services.subtitle) && (
+            <div className="landing-section-header">
+              <h2>{sections.services.title}</h2>
+              {isNonEmptyString(sections.services.subtitle) && (
+                <p className="muted">{sections.services.subtitle}</p>
+              )}
+              {isNonEmptyString(sections.services.pricing_note) && (
+                <p className="muted">{sections.services.pricing_note}</p>
+              )}
+            </div>
+          )}
+          <div className="landing-grid">
+            {sections.services.items.map((service) => (
+              <div className="landing-card" key={service.title}>
+                <div className="landing-card-header">
+                  <h3>{service.title}</h3>
+                  {isNonEmptyString(service.price) && (
+                    <span className="landing-price">{service.price}</span>
+                  )}
+                </div>
+                {isNonEmptyString(service.body) && (
+                  <p className="muted">{service.body}</p>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="landing-footer-actions">
-            <button className="button secondary" type="button" onClick={handleCopyLink}>
-              Copy link
-            </button>
-            {copyMessage && <span className="muted">{copyMessage}</span>}
+        </section>
+      )}
+
+      {showTestimonials && (
+        <section className="landing-section">
+          {shouldShowHeader(
+            sections.testimonials.title,
+            sections.testimonials.subtitle
+          ) && (
+            <div className="landing-section-header">
+              <h2>{sections.testimonials.title}</h2>
+              {isNonEmptyString(sections.testimonials.subtitle) && (
+                <p className="muted">{sections.testimonials.subtitle}</p>
+              )}
+            </div>
+          )}
+          <div className="landing-grid">
+            {sections.testimonials.items.map((item) => (
+              <div className="landing-card" key={item.quote}>
+                <p className="landing-quote">"{item.quote}"</p>
+                <div className="landing-testimonial-meta">
+                  <strong>{item.name}</strong>
+                  {isNonEmptyString(item.role) && (
+                    <span className="muted">{item.role}</span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      </footer>
+        </section>
+      )}
+
+      {showFaq && (
+        <section className="landing-section">
+          {shouldShowHeader(sections.faq.title, sections.faq.subtitle) && (
+            <div className="landing-section-header">
+              <h2>{sections.faq.title}</h2>
+              {isNonEmptyString(sections.faq.subtitle) && (
+                <p className="muted">{sections.faq.subtitle}</p>
+              )}
+            </div>
+          )}
+          <div className="landing-faq">
+            {sections.faq.items.map((item) => (
+              <details className="landing-faq-item" key={item.q}>
+                <summary>{item.q}</summary>
+                <p className="muted">{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {showLocation && (
+        <section className="landing-section">
+          {shouldShowHeader(
+            sections.location.title,
+            sections.location.subtitle
+          ) && (
+            <div className="landing-section-header">
+              <h2>{sections.location.title}</h2>
+              {isNonEmptyString(sections.location.subtitle) && (
+                <p className="muted">{sections.location.subtitle}</p>
+              )}
+            </div>
+          )}
+          <div className="landing-grid two-col">
+            {showVisitCard && (
+              <div className="landing-card">
+                <h3>Visit us</h3>
+                <p className="muted">
+                  {addressLine || "Address available on request."}
+                </p>
+                {sections.location.show_map_button && mapLink && (
+                  <a
+                    className="button secondary"
+                    href={mapLink}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Directions
+                  </a>
+                )}
+              </div>
+            )}
+            {showContactCard && (
+              <div className="landing-card">
+                <h3>Contact</h3>
+                <div className="landing-contact-list">
+                  {contactPhone && (
+                    <a className="landing-contact-link" href={callLink ?? "#"}>
+                      {contactPhone}
+                    </a>
+                  )}
+                  {contactEmail && (
+                    <a className="landing-contact-link" href={`mailto:${contactEmail}`}>
+                      {contactEmail}
+                    </a>
+                  )}
+                  {hours.length > 0 && (
+                    <div className="landing-hours">
+                      {hours.map((slot, index) => (
+                        <span key={`${slot.label}-${slot.value}-${index}`}>
+                          {slot.label && slot.value
+                            ? `${slot.label}: ${slot.value}`
+                            : slot.label || slot.value}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {showFooter && (
+        <footer className="landing-footer">
+          {showShare && (
+            <div className="landing-footer-card">
+              <div>
+                <div className="landing-footer-title">{footer.share_label}</div>
+                <p className="muted">
+                  Send this link to parents, patients, or friends.
+                </p>
+              </div>
+              <div className="landing-footer-actions">
+                <button className="button secondary" type="button" onClick={handleCopyLink}>
+                  Copy link
+                </button>
+                {copyMessage && <span className="muted">{copyMessage}</span>}
+              </div>
+            </div>
+          )}
+          {showDeveloperCredit && (
+            <div className="landing-footer-credit">
+              {footer.developer_credit.url ? (
+                <a href={footer.developer_credit.url} target="_blank" rel="noreferrer">
+                  {footer.developer_credit.label}
+                </a>
+              ) : (
+                <span>{footer.developer_credit.label}</span>
+              )}
+            </div>
+          )}
+        </footer>
+      )}
 
       <div
         className={`sheet-backdrop ${sheetOpen ? "open" : ""}`}
@@ -1152,41 +1045,48 @@ export default function TenantLandingPage({
         </div>
       </div>
 
-      <div className="landing-cta-bar" role="region" aria-label="Quick actions">
-        {primaryIsEnquire || !primaryCtaHref ? (
-          <button type="button" className="cta-primary" onClick={openSheet}>
-            {primaryLabel}
-          </button>
-        ) : (
-          <a
-            className="cta-primary"
-            href={primaryCtaHref}
-            target={primaryCtaType === "whatsapp" ? "_blank" : undefined}
-            rel={primaryCtaType === "whatsapp" ? "noreferrer" : undefined}
-          >
-            {primaryLabel}
-          </a>
-        )}
-        {secondaryHref ? (
-          <a
-            className="cta-secondary"
-            href={secondaryHref}
-            target={secondaryAction === "call" ? undefined : "_blank"}
-            rel={secondaryAction === "call" ? undefined : "noreferrer"}
-          >
-            {secondaryLabel}
-          </a>
-        ) : (
-          <button type="button" className="cta-secondary" onClick={openSheet}>
-            {secondaryLabel}
-          </button>
-        )}
-        {showEnquireCta && (
-          <button type="button" className="cta-tertiary" onClick={openSheet}>
-            Enquire
-          </button>
-        )}
-      </div>
+      {ctaBarEnabled && (
+        <div
+          className="landing-cta-bar"
+          role="region"
+          aria-label="Quick actions"
+          ref={ctaBarRef}
+        >
+          {primaryIsEnquire || !primaryCtaHref ? (
+            <button type="button" className="cta-primary" onClick={openSheet}>
+              {primaryLabel}
+            </button>
+          ) : (
+            <a
+              className="cta-primary"
+              href={primaryCtaHref}
+              target={primaryCtaType === "whatsapp" ? "_blank" : undefined}
+              rel={primaryCtaType === "whatsapp" ? "noreferrer" : undefined}
+            >
+              {primaryLabel}
+            </a>
+          )}
+          {secondaryHref ? (
+            <a
+              className="cta-secondary"
+              href={secondaryHref}
+              target={secondaryAction === "call" ? undefined : "_blank"}
+              rel={secondaryAction === "call" ? undefined : "noreferrer"}
+            >
+              {secondaryLabel}
+            </a>
+          ) : (
+            <button type="button" className="cta-secondary" onClick={handleSecondaryClick}>
+              {secondaryLabel}
+            </button>
+          )}
+          {showEnquireCta && (
+            <button type="button" className="cta-tertiary" onClick={openSheet}>
+              Enquire
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -36,6 +36,10 @@ declare
   v_contact_email text;
   v_address text;
   v_primary_color text;
+  v_landing_config jsonb;
+  v_proof_chips jsonb;
+  v_services_title text;
+  v_subheadline text;
 begin
   v_slug := lower(trim(coalesce(p_slug, '')));
 
@@ -166,15 +170,130 @@ begin
     v_lead_form_schema := jsonb_set(v_lead_form_schema, '{trust_points}', p_trust_points, true);
   end if;
 
-  if p_landing_content is not null and jsonb_typeof(p_landing_content) = 'object' then
-    v_lead_form_schema := v_lead_form_schema || jsonb_build_object('landing', p_landing_content);
-  end if;
-
   v_tagline := coalesce(nullif(trim(p_tagline), ''), v_tagline);
   v_contact_phone := nullif(trim(p_contact_phone), '');
   v_contact_email := nullif(trim(p_contact_email), '');
   v_address := nullif(trim(p_address), '');
   v_primary_color := nullif(trim(p_primary_color), '');
+  v_services_title := case
+    when v_vertical = 'pg' then 'Room types'
+    when v_vertical = 'clinic' then 'Treatments & packages'
+    when v_vertical = 'salon' then 'Popular services'
+    when v_vertical = 'coaching' then 'Courses & batches'
+    when v_vertical = 'cab' then 'Services'
+    else 'Services and packages'
+  end;
+  v_proof_chips := coalesce(
+    case when jsonb_typeof(p_trust_points) = 'array' then p_trust_points else null end,
+    v_lead_form_schema->'trust_points',
+    '[]'::jsonb
+  );
+  v_subheadline := coalesce(
+    v_tagline,
+    'Fast, friendly, and verified support for your next enquiry.'
+  );
+  v_landing_config := jsonb_build_object(
+    'version', 1,
+    'vertical', v_vertical,
+    'brand', jsonb_build_object(
+      'name', p_name,
+      'tagline', v_tagline,
+      'badge', 'Trusted local team'
+    ),
+    'contact', jsonb_build_object(
+      'phone', v_contact_phone,
+      'whatsapp', v_contact_phone,
+      'email', v_contact_email,
+      'address_line', v_address,
+      'map_url', null,
+      'hours', jsonb_build_array()
+    ),
+    'cta', jsonb_build_object(
+      'primary', jsonb_build_object(
+        'type', 'whatsapp',
+        'label', 'WhatsApp',
+        'prefill_template', 'Hi, I want to enquire about {brand_name}.'
+      ),
+      'secondary', jsonb_build_object(
+        'type', 'call',
+        'label', 'Call'
+      ),
+      'sticky_bar', jsonb_build_object(
+        'enabled', true,
+        'show_enquire', true
+      )
+    ),
+    'hero', jsonb_build_object(
+      'headline', p_name,
+      'subheadline', v_subheadline,
+      'proof_chips', v_proof_chips,
+      'snapshot', jsonb_build_object(
+        'title', 'Quick snapshot',
+        'bullets', v_proof_chips
+      ),
+      'media', jsonb_build_object(
+        'hero_image_url', null,
+        'gallery_strip_enabled', false
+      )
+    ),
+    'sections', jsonb_build_object(
+      'why_choose', jsonb_build_object(
+        'enabled', true,
+        'title', 'Why choose us',
+        'subtitle', 'The details that matter before you decide.',
+        'items', null
+      ),
+      'gallery', jsonb_build_object(
+        'enabled', true,
+        'title', 'Gallery',
+        'images', jsonb_build_array()
+      ),
+      'services', jsonb_build_object(
+        'enabled', true,
+        'title', v_services_title,
+        'subtitle', 'Choose the plan that fits your needs.',
+        'pricing_note', null,
+        'items', null
+      ),
+      'testimonials', jsonb_build_object(
+        'enabled', true,
+        'title', 'People love the experience',
+        'subtitle', 'Recent feedback from real visitors.',
+        'items', null
+      ),
+      'faq', jsonb_build_object(
+        'enabled', true,
+        'title', 'FAQ',
+        'subtitle', 'Quick answers to common questions.',
+        'items', null
+      ),
+      'location', jsonb_build_object(
+        'enabled', true,
+        'title', 'Location and hours',
+        'subtitle', 'Find us or reach out anytime.',
+        'show_map_button', true,
+        'show_contact_card', true
+      )
+    ),
+    'footer', jsonb_build_object(
+      'show_share', true,
+      'share_label', 'Share this page',
+      'developer_credit', jsonb_build_object(
+        'enabled', false,
+        'label', null,
+        'url', null
+      )
+    ),
+    'theme', jsonb_build_object(
+      'theme_id', null
+    )
+  );
+
+  if p_landing_content is not null and jsonb_typeof(p_landing_content) = 'object' then
+    v_landing_config := v_landing_config || p_landing_content;
+  end if;
+
+  v_lead_form_schema := v_lead_form_schema || jsonb_build_object('landing', v_landing_config);
 
   insert into public.landing_settings (
     tenant_id,

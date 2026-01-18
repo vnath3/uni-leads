@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import type { LandingConfigV1 } from "@/lib/landingConfig";
 
 type FaqItem = {
   question: string;
@@ -257,19 +258,63 @@ export default function CreateTenantPage() {
     const gallery = normalizeList(draft.gallery);
     const faqs = normalizeFaqs(draft.faqs);
 
-    const landingContent: Record<string, unknown> = {};
     const trimmedHeadline = draft.headline.trim();
     const trimmedSubheadline = draft.subheadline.trim();
     const trimmedWhatsApp = draft.whatsappNumber.trim();
-    if (trimmedHeadline) landingContent.headline = trimmedHeadline;
-    if (trimmedSubheadline) landingContent.subheadline = trimmedSubheadline;
-    if (proofPoints.length > 0) landingContent.proof_points = proofPoints;
-    landingContent.primary_cta_type = draft.primaryCtaType;
-    landingContent.primary_cta_label = primaryPreviewLabel;
-    if (trimmedWhatsApp) landingContent.whatsapp_number = trimmedWhatsApp;
-    if (whyChoose.length > 0) landingContent.why_choose = whyChoose;
-    if (gallery.length > 0) landingContent.gallery = gallery;
-    if (faqs.length > 0) landingContent.faq = faqs;
+    const landingContent: LandingConfigV1 = {
+      version: 1,
+      vertical: draft.vertical as LandingConfigV1["vertical"],
+      brand: {
+        name: draft.name.trim(),
+        tagline: trimmedSubheadline
+      },
+      contact: {
+        phone: draft.phoneNumber.trim(),
+        whatsapp: trimmedWhatsApp || draft.phoneNumber.trim(),
+        address_line: draft.address.trim()
+      },
+      cta: {
+        primary: {
+          type: draft.primaryCtaType,
+          label: primaryPreviewLabel,
+          prefill_template: "Hi, I want to enquire about {brand_name}."
+        }
+      },
+      hero: {
+        headline: trimmedHeadline,
+        subheadline: trimmedSubheadline,
+        proof_chips: proofPoints,
+        snapshot: {
+          title: "Quick snapshot",
+          bullets: proofPoints
+        }
+      },
+      sections: {}
+    };
+
+    if (whyChoose.length > 0) {
+      landingContent.sections = landingContent.sections ?? {};
+      landingContent.sections.why_choose = {
+        items: whyChoose.map((item) => ({
+          title: item,
+          body: "Details available on request."
+        }))
+      };
+    }
+
+    if (gallery.length > 0) {
+      landingContent.sections = landingContent.sections ?? {};
+      landingContent.sections.gallery = {
+        images: gallery.map((url) => ({ url, caption: "" }))
+      };
+    }
+
+    if (faqs.length > 0) {
+      landingContent.sections = landingContent.sections ?? {};
+      landingContent.sections.faq = {
+        items: faqs.map((item) => ({ q: item.question, a: item.answer }))
+      };
+    }
 
     const payload: Record<string, unknown> = {
       p_name: draft.name.trim(),

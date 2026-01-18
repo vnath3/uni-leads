@@ -1926,6 +1926,16 @@ export default function SuperDashboardPage() {
                             Open Landing
                           </span>
                         )}
+                        {slug ? (
+                          <Link
+                            className="button secondary"
+                            href={`/super/tenants/${tenant.id}/landing`}
+                          >
+                            Edit Landing
+                          </Link>
+                        ) : (
+                          <span className="button secondary disabled">Edit Landing</span>
+                        )}
                       </div>
                       <div className="drawer-actions">
                         {slug ? (

@@ -209,11 +209,45 @@ For slug:
     {"key":"full_name","label":"Full Name","type":"text","required":true},
     {"key":"phone","label":"Phone","type":"tel","required":true},
     {"key":"pain_area","label":"Pain Area","type":"select","required":false,"options":["Knee","Back"]}
-  ]
+  ],
+  "trust_points": [
+    "Physio-led care plans",
+    "Same-day appointment slots",
+    "Evidence-based rehab"
+  ],
+  "landing": {
+    "headline": "Premium stays for focused students",
+    "subheadline": "Safe, calm, and just minutes from coaching.",
+    "proof_points": ["Fast WhatsApp response", "Verified local team", "Transparent pricing"],
+    "primary_cta_type": "whatsapp",
+    "primary_cta_label": "WhatsApp",
+    "whatsapp_number": "+91 98xxxxxx",
+    "why_choose": ["Fast response", "Verified and trusted", "Flexible options", "Prime location"],
+    "gallery": ["https://.../image1.jpg", "https://.../image2.jpg"],
+    "faq": [
+      {"question":"How fast do you respond?","answer":"Typically within 10 minutes on WhatsApp."}
+    ]
+  }
 }
 ```
 
+**Notes**
+
+* `landing` is an optional json object used by the public landing page.
+* `trust_points` and `landing.proof_points` are both supported; landing will use whichever exists.
+
 ---
+
+## 5.1) Create tenant (platform)
+
+RPC: `public.create_tenant_full(...)` creates tenant + defaults and landing settings.
+
+**Optional landing config arguments**
+
+* `p_tagline`: overrides landing tagline.
+* `p_contact_phone`, `p_contact_email`, `p_address`, `p_primary_color`
+* `p_landing_content` (jsonb): merged into `lead_form_schema.landing`.
+* `p_trust_points` (jsonb array): overrides `lead_form_schema.trust_points`.
 
 ## 6) Lead capture (public submit)
 
