@@ -20,6 +20,11 @@ type TenantIdentity = {
   is_primary?: boolean | null;
 };
 
+type DomainIdentity = {
+  tenant_id: string;
+  value: string;
+};
+
 type Feature = {
   key: string;
   name: string;
@@ -98,6 +103,16 @@ const buildInviteUrl = (token: string) => {
     return `/claim?token=${encodeURIComponent(token)}`;
   }
   return `${normalized}/claim?token=${encodeURIComponent(token)}`;
+};
+
+const normalizeDomainInput = (value: string) => {
+  let domain = value.trim().toLowerCase();
+  if (!domain) return "";
+  domain = domain.replace(/^https?:\/\//, "");
+  domain = domain.split("/")[0] ?? "";
+  domain = domain.replace(/:\d+$/, "");
+  domain = domain.replace(/\/$/, "");
+  return domain;
 };
 
 const checkPlatformUser = async (userId: string): Promise<PlatformCheckResult> => {
@@ -180,6 +195,18 @@ export default function SuperDashboardPage() {
     Record<string, string>
   >({});
   const [inviteCopyMessageByTenant, setInviteCopyMessageByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [domainsByTenant, setDomainsByTenant] = useState<
+    Record<string, string[]>
+  >({});
+  const [domainInputByTenant, setDomainInputByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [domainBusyByTenant, setDomainBusyByTenant] = useState<
+    Record<string, boolean>
+  >({});
+  const [domainErrorByTenant, setDomainErrorByTenant] = useState<
     Record<string, string>
   >({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -312,6 +339,7 @@ export default function SuperDashboardPage() {
     const [
       tenantsRes,
       identitiesRes,
+      domainsRes,
       featuresRes,
       tenantFeaturesRes,
       supportRes
@@ -325,6 +353,11 @@ export default function SuperDashboardPage() {
         .select("tenant_id, value, identity_type, is_primary")
         .eq("identity_type", "slug")
         .order("is_primary", { ascending: false }),
+      supabase
+        .from("tenant_identities")
+        .select("tenant_id, value")
+        .eq("identity_type", "domain")
+        .order("value"),
       supabase.from("features").select("key, name, category, is_active").order("name"),
       supabase
         .from("tenant_features")
@@ -342,6 +375,7 @@ export default function SuperDashboardPage() {
     const firstError =
       tenantsRes.error ||
       identitiesRes.error ||
+      domainsRes.error ||
       featuresRes.error ||
       tenantFeaturesRes.error ||
       supportRes.error;
@@ -363,6 +397,15 @@ export default function SuperDashboardPage() {
       }
     }
     setSlugByTenant(slugMap);
+
+    const domainMap: Record<string, string[]> = {};
+    for (const identity of (domainsRes.data as DomainIdentity[]) ?? []) {
+      if (!domainMap[identity.tenant_id]) {
+        domainMap[identity.tenant_id] = [];
+      }
+      domainMap[identity.tenant_id].push(identity.value);
+    }
+    setDomainsByTenant(domainMap);
 
     const accessMap: Record<
       string,
@@ -494,6 +537,106 @@ export default function SuperDashboardPage() {
       }
     }));
     setInviteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+  };
+
+  const handleAddDomain = async (tenantId: string) => {
+    if (!session?.user.id) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const rawInput = domainInputByTenant[tenantId] ?? "";
+    const normalized = normalizeDomainInput(rawInput);
+
+    if (!normalized) {
+      setDomainErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Enter a valid domain."
+      }));
+      return;
+    }
+
+    setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: true }));
+    setDomainErrorByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+
+    const { data, error: domainError } = await supabase
+      .schema("public")
+      .rpc("add_tenant_domain", {
+        p_tenant_id: tenantId,
+        p_domain: normalized
+      });
+
+    if (domainError) {
+      const message = domainError.message.toLowerCase().includes("already")
+        ? "Domain already in use."
+        : domainError.message;
+      setDomainErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: message
+      }));
+      setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    const addedDomain =
+      Array.isArray(data) && data.length > 0
+        ? data[0]?.domain
+        : (data as { domain?: string } | null)?.domain;
+
+    if (addedDomain) {
+      setDomainsByTenant((prev) => ({
+        ...prev,
+        [tenantId]: Array.from(
+          new Set([...(prev[tenantId] ?? []), addedDomain])
+        )
+      }));
+    }
+
+    setDomainInputByTenant((prev) => ({
+      ...prev,
+      [tenantId]: ""
+    }));
+    setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+  };
+
+  const handleRemoveDomain = async (tenantId: string, domain: string) => {
+    if (!session?.user.id) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: true }));
+    setDomainErrorByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+
+    const { error: removeError } = await supabase
+      .schema("public")
+      .rpc("remove_tenant_domain", {
+        p_tenant_id: tenantId,
+        p_domain: domain
+      });
+
+    if (removeError) {
+      setDomainErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: removeError.message
+      }));
+      setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    setDomainsByTenant((prev) => ({
+      ...prev,
+      [tenantId]: (prev[tenantId] ?? []).filter((value) => value !== domain)
+    }));
+    setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
   const handleSupportRequest = async (tenantId: string, mode: "RO" | "RW") => {
@@ -752,6 +895,10 @@ export default function SuperDashboardPage() {
         const inviteBusy = !!inviteBusyByTenant[tenant.id];
         const inviteError = inviteErrorByTenant[tenant.id];
         const inviteCopyMessage = inviteCopyMessageByTenant[tenant.id];
+        const domains = domainsByTenant[tenant.id] ?? [];
+        const domainInput = domainInputByTenant[tenant.id] ?? "";
+        const domainBusy = !!domainBusyByTenant[tenant.id];
+        const domainError = domainErrorByTenant[tenant.id];
 
         const statusLabel = (tenant.status ?? "unknown").toLowerCase();
         const statusBadgeClass = `status-badge ${statusLabel}`;
@@ -909,6 +1056,55 @@ export default function SuperDashboardPage() {
                   Revoke
                 </button>
               </div>
+            </div>
+
+            <div className="section">
+              <div className="section-title">Domains</div>
+              <p className="muted">
+                Add both apex and www if you want both to work.
+              </p>
+              <label className="field">
+                <span>Domain</span>
+                <input
+                  type="text"
+                  value={domainInput}
+                  onChange={(event) =>
+                    setDomainInputByTenant((prev) => ({
+                      ...prev,
+                      [tenant.id]: event.target.value
+                    }))
+                  }
+                  placeholder="example.com"
+                />
+              </label>
+              <div className="tag-list">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={domainBusy}
+                  onClick={() => handleAddDomain(tenant.id)}
+                >
+                  {domainBusy ? "Saving..." : "Add domain"}
+                </button>
+              </div>
+              {domainError && <div className="error">{domainError}</div>}
+              {domains.length === 0 ? (
+                <p className="muted">No domains added.</p>
+              ) : (
+                domains.map((domain) => (
+                  <div className="tag-list" key={`${tenant.id}-${domain}`}>
+                    <span className="tag">{domain}</span>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={domainBusy}
+                      onClick={() => handleRemoveDomain(tenant.id, domain)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="section">
