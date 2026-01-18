@@ -115,6 +115,9 @@ const normalizeDomainInput = (value: string) => {
   return domain;
 };
 
+const normalizeConfirmToken = (value?: string | null) =>
+  (value ?? "").trim().toLowerCase();
+
 const checkPlatformUser = async (userId: string): Promise<PlatformCheckResult> => {
   const { data, error } = await supabase
     .from("platform_users")
@@ -657,19 +660,22 @@ export default function SuperDashboardPage() {
     setDomainBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
-  const handleArchiveTenant = async (tenantId: string, slug?: string) => {
+  const handleArchiveTenant = async (
+    tenantId: string,
+    expectedToken: string
+  ) => {
     if (!session?.user.id) {
       setError("Session expired. Please sign in again.");
       return;
     }
 
-    const input = (archiveInputByTenant[tenantId] ?? "").trim().toLowerCase();
-    const expected = (slug ?? "").trim().toLowerCase();
+    const input = normalizeConfirmToken(archiveInputByTenant[tenantId]);
+    const expected = normalizeConfirmToken(expectedToken);
 
     if (!expected) {
       setArchiveErrorByTenant((prev) => ({
         ...prev,
-        [tenantId]: "Slug is missing. Cannot archive."
+        [tenantId]: "Tenant identifier is missing. Cannot archive."
       }));
       return;
     }
@@ -715,21 +721,22 @@ export default function SuperDashboardPage() {
     setArchiveBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
-  const handleHardDeleteTenant = async (tenantId: string, slug?: string) => {
+  const handleHardDeleteTenant = async (
+    tenantId: string,
+    expectedToken: string
+  ) => {
     if (!session?.user.id) {
       setError("Session expired. Please sign in again.");
       return;
     }
 
-    const input = (hardDeleteInputByTenant[tenantId] ?? "")
-      .trim()
-      .toLowerCase();
-    const expected = (slug ?? "").trim().toLowerCase();
+    const input = normalizeConfirmToken(hardDeleteInputByTenant[tenantId]);
+    const expected = normalizeConfirmToken(expectedToken);
 
     if (!expected) {
       setHardDeleteErrorByTenant((prev) => ({
         ...prev,
-        [tenantId]: "Slug is missing. Cannot delete."
+        [tenantId]: "Tenant identifier is missing. Cannot delete."
       }));
       return;
     }
@@ -1043,6 +1050,11 @@ export default function SuperDashboardPage() {
         const hardDeleteInput = hardDeleteInputByTenant[tenant.id] ?? "";
         const hardDeleteBusy = !!hardDeleteBusyByTenant[tenant.id];
         const hardDeleteError = hardDeleteErrorByTenant[tenant.id];
+        const confirmToken = slug ?? tenant.id;
+        const confirmLabel = slug ? "Confirm slug" : "Confirm tenant ID";
+        const confirmHint = slug
+          ? "Type the tenant slug to confirm."
+          : "Slug missing. Type the tenant ID to confirm.";
 
         const statusLabel = (tenant.status ?? "unknown").toLowerCase();
         const statusBadgeClass = `status-badge ${statusLabel}`;
@@ -1255,10 +1267,10 @@ export default function SuperDashboardPage() {
             <div className="section">
               <div className="section-title">Archive tenant</div>
               <p className="muted">
-                Type the tenant slug to confirm. This disables landing and admin access.
+                {confirmHint} This disables landing and admin access.
               </p>
               <label className="field">
-                <span>Confirm slug</span>
+                <span>{confirmLabel}</span>
                 <input
                   type="text"
                   value={archiveInput}
@@ -1268,7 +1280,7 @@ export default function SuperDashboardPage() {
                       [tenant.id]: event.target.value
                     }))
                   }
-                  placeholder={slug ?? "slug"}
+                  placeholder={confirmToken}
                 />
               </label>
               <div className="tag-list">
@@ -1276,7 +1288,7 @@ export default function SuperDashboardPage() {
                   type="button"
                   className="button secondary"
                   disabled={archiveBusy || isArchived}
-                  onClick={() => handleArchiveTenant(tenant.id, slug)}
+                  onClick={() => handleArchiveTenant(tenant.id, confirmToken)}
                 >
                   {archiveBusy ? "Archiving..." : isArchived ? "Archived" : "Archive tenant"}
                 </button>
@@ -1287,10 +1299,10 @@ export default function SuperDashboardPage() {
             <div className="section">
               <div className="section-title">Hard delete tenant</div>
               <p className="muted">
-                Permanently removes tenant data. Type the slug to confirm.
+                Permanently removes tenant data. {confirmHint}
               </p>
               <label className="field">
-                <span>Confirm slug</span>
+                <span>{confirmLabel}</span>
                 <input
                   type="text"
                   value={hardDeleteInput}
@@ -1300,7 +1312,7 @@ export default function SuperDashboardPage() {
                       [tenant.id]: event.target.value
                     }))
                   }
-                  placeholder={slug ?? "slug"}
+                  placeholder={confirmToken}
                 />
               </label>
               <div className="tag-list">
@@ -1308,7 +1320,7 @@ export default function SuperDashboardPage() {
                   type="button"
                   className="button secondary"
                   disabled={hardDeleteBusy}
-                  onClick={() => handleHardDeleteTenant(tenant.id, slug)}
+                  onClick={() => handleHardDeleteTenant(tenant.id, confirmToken)}
                 >
                   {hardDeleteBusy ? "Deleting..." : "Hard delete tenant"}
                 </button>
