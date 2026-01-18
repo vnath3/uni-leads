@@ -218,6 +218,15 @@ export default function SuperDashboardPage() {
   const [archiveErrorByTenant, setArchiveErrorByTenant] = useState<
     Record<string, string>
   >({});
+  const [hardDeleteInputByTenant, setHardDeleteInputByTenant] = useState<
+    Record<string, string>
+  >({});
+  const [hardDeleteBusyByTenant, setHardDeleteBusyByTenant] = useState<
+    Record<string, boolean>
+  >({});
+  const [hardDeleteErrorByTenant, setHardDeleteErrorByTenant] = useState<
+    Record<string, string>
+  >({});
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
@@ -706,6 +715,68 @@ export default function SuperDashboardPage() {
     setArchiveBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
   };
 
+  const handleHardDeleteTenant = async (tenantId: string, slug?: string) => {
+    if (!session?.user.id) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
+
+    const input = (hardDeleteInputByTenant[tenantId] ?? "")
+      .trim()
+      .toLowerCase();
+    const expected = (slug ?? "").trim().toLowerCase();
+
+    if (!expected) {
+      setHardDeleteErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Slug is missing. Cannot delete."
+      }));
+      return;
+    }
+
+    if (input !== expected) {
+      setHardDeleteErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: "Type the exact slug to confirm."
+      }));
+      return;
+    }
+
+    setHardDeleteBusyByTenant((prev) => ({ ...prev, [tenantId]: true }));
+    setHardDeleteErrorByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+
+    const { error: deleteError } = await supabase
+      .schema("public")
+      .rpc("hard_delete_tenant", { p_tenant_id: tenantId });
+
+    if (deleteError) {
+      setHardDeleteErrorByTenant((prev) => ({
+        ...prev,
+        [tenantId]: deleteError.message
+      }));
+      setHardDeleteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+      return;
+    }
+
+    setTenants((prev) => prev.filter((row) => row.id !== tenantId));
+    setSlugByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+    setDomainsByTenant((prev) => {
+      const next = { ...prev };
+      delete next[tenantId];
+      return next;
+    });
+    setHardDeleteInputByTenant((prev) => ({ ...prev, [tenantId]: "" }));
+    setHardDeleteBusyByTenant((prev) => ({ ...prev, [tenantId]: false }));
+  };
+
   const handleSupportRequest = async (tenantId: string, mode: "RO" | "RW") => {
     const currentUserId = session?.user.id;
     if (!currentUserId) {
@@ -969,6 +1040,9 @@ export default function SuperDashboardPage() {
         const archiveInput = archiveInputByTenant[tenant.id] ?? "";
         const archiveBusy = !!archiveBusyByTenant[tenant.id];
         const archiveError = archiveErrorByTenant[tenant.id];
+        const hardDeleteInput = hardDeleteInputByTenant[tenant.id] ?? "";
+        const hardDeleteBusy = !!hardDeleteBusyByTenant[tenant.id];
+        const hardDeleteError = hardDeleteErrorByTenant[tenant.id];
 
         const statusLabel = (tenant.status ?? "unknown").toLowerCase();
         const statusBadgeClass = `status-badge ${statusLabel}`;
@@ -1208,6 +1282,38 @@ export default function SuperDashboardPage() {
                 </button>
               </div>
               {archiveError && <div className="error">{archiveError}</div>}
+            </div>
+
+            <div className="section">
+              <div className="section-title">Hard delete tenant</div>
+              <p className="muted">
+                Permanently removes tenant data. Type the slug to confirm.
+              </p>
+              <label className="field">
+                <span>Confirm slug</span>
+                <input
+                  type="text"
+                  value={hardDeleteInput}
+                  onChange={(event) =>
+                    setHardDeleteInputByTenant((prev) => ({
+                      ...prev,
+                      [tenant.id]: event.target.value
+                    }))
+                  }
+                  placeholder={slug ?? "slug"}
+                />
+              </label>
+              <div className="tag-list">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={hardDeleteBusy}
+                  onClick={() => handleHardDeleteTenant(tenant.id, slug)}
+                >
+                  {hardDeleteBusy ? "Deleting..." : "Hard delete tenant"}
+                </button>
+              </div>
+              {hardDeleteError && <div className="error">{hardDeleteError}</div>}
             </div>
 
             <div className="section">
