@@ -455,6 +455,17 @@ export default function SuperDashboardPage() {
   }, [activeMenuTenantId]);
 
   useEffect(() => {
+    if (!activeMenuTenantId) return;
+    const menu = document.querySelector<HTMLElement>(
+      `[data-menu-items="${activeMenuTenantId}"]`
+    );
+    const firstItem = menu?.querySelector<HTMLElement>('[role="menuitem"]');
+    if (firstItem) {
+      requestAnimationFrame(() => firstItem.focus());
+    }
+  }, [activeMenuTenantId]);
+
+  useEffect(() => {
     return () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
@@ -463,15 +474,22 @@ export default function SuperDashboardPage() {
   }, []);
 
   useEffect(() => {
+    const drawerNode = drawerRef.current;
+
     if (!drawerOpen) {
       document.body.style.overflow = "";
+      if (drawerNode) {
+        drawerNode.setAttribute("inert", "");
+      }
       return;
     }
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const drawerNode = drawerRef.current;
+    if (drawerNode) {
+      drawerNode.removeAttribute("inert");
+    }
     const focusable = drawerNode?.querySelectorAll<HTMLElement>(
       "a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex=\"-1\"])"
     );
@@ -1346,6 +1364,14 @@ export default function SuperDashboardPage() {
     event: React.KeyboardEvent<HTMLTableRowElement | HTMLDivElement>,
     tenantId: string
   ) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target &&
+      target !== event.currentTarget &&
+      target.closest("a, button, input, select, textarea, summary, details")
+    ) {
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       openDrawer(tenantId);
@@ -1354,6 +1380,52 @@ export default function SuperDashboardPage() {
 
   const stopRowClick = (event: React.SyntheticEvent) => {
     event.stopPropagation();
+  };
+
+  const handleMenuKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    tenantId: string
+  ) => {
+    const menuItems = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')
+    );
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      setActiveMenuTenantId(null);
+      const trigger = document.querySelector<HTMLElement>(
+        `[data-menu-trigger="${tenantId}"]`
+      );
+      trigger?.focus();
+      return;
+    }
+    if (!menuItems.length) return;
+
+    const currentIndex = menuItems.indexOf(
+      document.activeElement as HTMLElement
+    );
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const nextIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+      menuItems[nextIndex % menuItems.length]?.focus();
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      const prevIndex =
+        currentIndex >= 0 ? currentIndex - 1 : menuItems.length - 1;
+      menuItems[(prevIndex + menuItems.length) % menuItems.length]?.focus();
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      menuItems[0]?.focus();
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      menuItems[menuItems.length - 1]?.focus();
+    }
   };
 
   const renderStatsChips = (
@@ -1399,6 +1471,7 @@ export default function SuperDashboardPage() {
           aria-haspopup="menu"
           aria-expanded={isOpen}
           aria-label="More tenant actions"
+          data-menu-trigger={tenantId}
           onClick={() =>
             setActiveMenuTenantId((prev) => (prev === tenantId ? null : tenantId))
           }
@@ -1406,7 +1479,13 @@ export default function SuperDashboardPage() {
           <span aria-hidden="true">...</span>
         </button>
         {isOpen && (
-          <div className="menu" role="menu">
+          <div
+            className="menu"
+            role="menu"
+            aria-label="Tenant actions"
+            data-menu-items={tenantId}
+            onKeyDown={(event) => handleMenuKeyDown(event, tenantId)}
+          >
             {slug ? (
               <>
                 <button
@@ -1491,7 +1570,7 @@ export default function SuperDashboardPage() {
 
   return (
     <>
-      <div className="super-shell">
+      <div className="super-shell" aria-hidden={drawerOpen}>
       <div className="super-header">
         <div className="super-header-left">
           <h1>Super Admin</h1>
