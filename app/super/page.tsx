@@ -1763,11 +1763,14 @@ export default function SuperDashboardPage() {
                   const stats = tenantStats[tenant.id];
                   const lastActivity = stats?.lastActivity ?? tenant.created_at;
                   const isSelected = selectedTenantId === tenant.id;
+                  const isMenuOpen = activeMenuTenantId === tenant.id;
 
                   return (
                     <tr
                       key={tenant.id}
-                      className={`tenant-row ${isSelected ? "selected" : ""}`}
+                      className={`tenant-row ${isSelected ? "selected" : ""} ${
+                        isMenuOpen ? "menu-open" : ""
+                      }`}
                       onClick={() => openDrawer(tenant.id)}
                       onKeyDown={(event) => handleRowKeyDown(event, tenant.id)}
                       tabIndex={0}
@@ -1826,11 +1829,14 @@ export default function SuperDashboardPage() {
               const stats = tenantStats[tenant.id];
               const lastActivity = stats?.lastActivity ?? tenant.created_at;
               const isSelected = selectedTenantId === tenant.id;
+              const isMenuOpen = activeMenuTenantId === tenant.id;
 
               return (
                 <div
                   key={tenant.id}
-                  className={`tenant-card ${isSelected ? "selected" : ""}`}
+                  className={`tenant-card ${isSelected ? "selected" : ""} ${
+                    isMenuOpen ? "menu-open" : ""
+                  }`}
                   onClick={() => openDrawer(tenant.id)}
                   onKeyDown={(event) => handleRowKeyDown(event, tenant.id)}
                   tabIndex={0}
