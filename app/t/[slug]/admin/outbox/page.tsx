@@ -12,6 +12,7 @@ type OutboxItem = {
   status: OutboxStatus;
   channel: OutboxChannel;
   scheduled_at: string;
+  to_phone?: string | null;
   contact_id?: string | null;
   subject?: string | null;
   body: string;
@@ -39,6 +40,15 @@ const resolveContact = (contact?: OutboxItem["contacts"]) => {
   if (!resolved) return "Unknown contact";
   return resolved.full_name || resolved.email || resolved.phone || "Unknown contact";
 };
+
+const normalizePhone = (raw?: string | null) => {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+};
+
+const buildWhatsAppUrl = (phoneDigits: string, text: string) =>
+  `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
 
 const readMetaString = (
   meta: OutboxItem["meta"],
@@ -77,6 +87,7 @@ export default function OutboxPage() {
            status,
            channel,
            scheduled_at,
+           to_phone,
            contact_id,
            subject,
            body,
@@ -161,6 +172,37 @@ export default function OutboxPage() {
     setSavingId(null);
   };
 
+  const recordManualSendOpened = async (item: OutboxItem, url: string) => {
+    if (readOnly) {
+      setError("Read-only support access.");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const metaValue =
+      item.meta && typeof item.meta === "object" ? item.meta : {};
+    const nextMeta = {
+      ...metaValue,
+      manual_send_opened_at: nowIso,
+      manual_send_url: url
+    };
+
+    const { error: updateError } = await supabase
+      .from("message_outbox")
+      .update({ meta: nextMeta })
+      .eq("id", item.id)
+      .eq("tenant_id", tenant.tenantId);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((row) => (row.id === item.id ? { ...row, meta: nextMeta } : row))
+    );
+  };
+
   if (loading) {
     return (
       <div className="card">
@@ -237,6 +279,11 @@ export default function OutboxPage() {
           filteredItems.map((item) => {
             const tenantName = readMetaString(item.meta, "tenant_name");
             const tenantPhone = readMetaString(item.meta, "tenant_phone");
+            const phoneDigits = normalizePhone(item.to_phone);
+            const whatsappUrl =
+              item.channel === "whatsapp" && phoneDigits
+                ? buildWhatsAppUrl(phoneDigits, item.body)
+                : null;
             return (
               <div className="card" key={item.id}>
               <h3>{resolveContact(item.contacts)}</h3>
@@ -259,6 +306,27 @@ export default function OutboxPage() {
               )}
               {item.error && <div className="error">{item.error}</div>}
               <div className="tag-list">
+                {item.channel === "whatsapp" && (
+                  <button
+                    type="button"
+                    className={`button ${readOnly ? "disabled" : ""}`}
+                    disabled={readOnly || savingId === item.id || !whatsappUrl}
+                    title={
+                      readOnly
+                        ? roTooltip
+                        : !whatsappUrl
+                          ? "Missing phone number"
+                          : undefined
+                    }
+                    onClick={() => {
+                      if (!whatsappUrl) return;
+                      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+                      void recordManualSendOpened(item, whatsappUrl);
+                    }}
+                  >
+                    Send on WhatsApp
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`button ${readOnly ? "disabled" : ""}`}
@@ -287,6 +355,9 @@ export default function OutboxPage() {
                   Retry
                 </button>
               </div>
+              {item.channel === "whatsapp" && !phoneDigits && (
+                <p className="muted">Missing recipient phone number.</p>
+              )}
             </div>
             );
           })
