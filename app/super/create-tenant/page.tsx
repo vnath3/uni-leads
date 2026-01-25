@@ -17,6 +17,7 @@ type LandingDraft = {
   slug: string;
   vertical: string;
   status: string;
+  websiteMode: "landing" | "external";
   headline: string;
   subheadline: string;
   proofChips: string[];
@@ -48,6 +49,7 @@ const emptyDraft: LandingDraft = {
   slug: "",
   vertical: "pg",
   status: "active",
+  websiteMode: "landing",
   headline: "",
   subheadline: "",
   proofChips: ["", "", ""],
@@ -176,6 +178,10 @@ export default function CreateTenantPage() {
   const primaryPreviewLabel = useMemo(() => {
     return draft.primaryCtaLabel.trim() || defaultCtaLabel(draft.primaryCtaType);
   }, [draft.primaryCtaLabel, draft.primaryCtaType]);
+  const isExternalWebsite = draft.websiteMode === "external";
+  const websiteModeLabel = isExternalWebsite
+    ? "External marketing site"
+    : "Uni-Leads landing page";
 
   const validateBasics = () => {
     if (!draft.name.trim()) {
@@ -191,6 +197,9 @@ export default function CreateTenantPage() {
   };
 
   const validateLanding = () => {
+    if (draft.websiteMode === "external") {
+      return null;
+    }
     if (!draft.headline.trim()) {
       return "Headline is required.";
     }
@@ -217,6 +226,10 @@ export default function CreateTenantPage() {
       const message = validateBasics();
       if (message) {
         setError(message);
+        return;
+      }
+      if (draft.websiteMode === "external") {
+        setStep(4);
         return;
       }
     }
@@ -253,67 +266,72 @@ export default function CreateTenantPage() {
 
     setCreating(true);
 
-    const proofPoints = normalizeList(draft.proofChips);
-    const whyChoose = normalizeList(draft.whyChoose);
-    const gallery = normalizeList(draft.gallery);
-    const faqs = normalizeFaqs(draft.faqs);
+    const isExternal = draft.websiteMode === "external";
+    const proofPoints = isExternal ? [] : normalizeList(draft.proofChips);
+    const whyChoose = isExternal ? [] : normalizeList(draft.whyChoose);
+    const gallery = isExternal ? [] : normalizeList(draft.gallery);
+    const faqs = isExternal ? [] : normalizeFaqs(draft.faqs);
 
     const trimmedHeadline = draft.headline.trim();
     const trimmedSubheadline = draft.subheadline.trim();
     const trimmedWhatsApp = draft.whatsappNumber.trim();
-    const landingContent: LandingConfigV1 = {
-      version: 1,
-      vertical: draft.vertical as LandingConfigV1["vertical"],
-      brand: {
-        name: draft.name.trim(),
-        tagline: trimmedSubheadline
-      },
-      contact: {
-        phone: draft.phoneNumber.trim(),
-        whatsapp: trimmedWhatsApp || draft.phoneNumber.trim(),
-        address_line: draft.address.trim()
-      },
-      cta: {
-        primary: {
-          type: draft.primaryCtaType,
-          label: primaryPreviewLabel,
-          prefill_template: "Hi, I want to enquire about {brand_name}."
-        }
-      },
-      hero: {
-        headline: trimmedHeadline,
-        subheadline: trimmedSubheadline,
-        proof_chips: proofPoints,
-        snapshot: {
-          title: "Quick snapshot",
-          bullets: proofPoints
-        }
-      },
-      sections: {}
-    };
+    let landingContent: LandingConfigV1 | null = null;
 
-    if (whyChoose.length > 0) {
-      landingContent.sections = landingContent.sections ?? {};
-      landingContent.sections.why_choose = {
-        items: whyChoose.map((item) => ({
-          title: item,
-          body: "Details available on request."
-        }))
+    if (!isExternal) {
+      landingContent = {
+        version: 1,
+        vertical: draft.vertical as LandingConfigV1["vertical"],
+        brand: {
+          name: draft.name.trim(),
+          tagline: trimmedSubheadline
+        },
+        contact: {
+          phone: draft.phoneNumber.trim(),
+          whatsapp: trimmedWhatsApp || draft.phoneNumber.trim(),
+          address_line: draft.address.trim()
+        },
+        cta: {
+          primary: {
+            type: draft.primaryCtaType,
+            label: primaryPreviewLabel,
+            prefill_template: "Hi, I want to enquire about {brand_name}."
+          }
+        },
+        hero: {
+          headline: trimmedHeadline,
+          subheadline: trimmedSubheadline,
+          proof_chips: proofPoints,
+          snapshot: {
+            title: "Quick snapshot",
+            bullets: proofPoints
+          }
+        },
+        sections: {}
       };
-    }
 
-    if (gallery.length > 0) {
-      landingContent.sections = landingContent.sections ?? {};
-      landingContent.sections.gallery = {
-        images: gallery.map((url) => ({ url, caption: "" }))
-      };
-    }
+      if (whyChoose.length > 0) {
+        landingContent.sections = landingContent.sections ?? {};
+        landingContent.sections.why_choose = {
+          items: whyChoose.map((item) => ({
+            title: item,
+            body: "Details available on request."
+          }))
+        };
+      }
 
-    if (faqs.length > 0) {
-      landingContent.sections = landingContent.sections ?? {};
-      landingContent.sections.faq = {
-        items: faqs.map((item) => ({ q: item.question, a: item.answer }))
-      };
+      if (gallery.length > 0) {
+        landingContent.sections = landingContent.sections ?? {};
+        landingContent.sections.gallery = {
+          images: gallery.map((url) => ({ url, caption: "" }))
+        };
+      }
+
+      if (faqs.length > 0) {
+        landingContent.sections = landingContent.sections ?? {};
+        landingContent.sections.faq = {
+          items: faqs.map((item) => ({ q: item.question, a: item.answer }))
+        };
+      }
     }
 
     const payload: Record<string, unknown> = {
@@ -326,8 +344,8 @@ export default function CreateTenantPage() {
       p_contact_email: null,
       p_address: draft.address.trim() || null,
       p_primary_color: null,
-      p_landing_content: Object.keys(landingContent).length > 0 ? landingContent : null,
-      p_trust_points: proofPoints.length > 0 ? proofPoints : null
+      p_landing_content: landingContent,
+      p_trust_points: !isExternal && proofPoints.length > 0 ? proofPoints : null
     };
 
     const { data, error: createError } = await supabase.rpc(
@@ -348,12 +366,33 @@ export default function CreateTenantPage() {
       return;
     }
 
+    let noticeMessage = isExternal
+      ? "Tenant created for external marketing site."
+      : "Tenant created with landing configuration.";
+
+    if (isExternal) {
+      const nowIso = new Date().toISOString();
+      const { error: disableError } = await supabase
+        .from("tenant_features")
+        .update({
+          enabled: false,
+          disabled_at: nowIso,
+          enabled_by: session?.user.id ?? null
+        })
+        .eq("tenant_id", createdRow.tenant_id)
+        .eq("feature_key", "landing");
+
+      if (disableError) {
+        noticeMessage = `${noticeMessage} Landing feature could not be disabled.`;
+      }
+    }
+
     setCreatedTenant({
       tenantId: createdRow.tenant_id,
       slug: createdRow.slug,
       name: draft.name.trim()
     });
-    setNotice("Tenant created with landing configuration.");
+    setNotice(noticeMessage);
     setCreating(false);
   };
 
@@ -411,7 +450,7 @@ export default function CreateTenantPage() {
           <p className="muted">Super Admin</p>
           <h1>Create tenant</h1>
           <p className="muted">
-            Configure core landing content before publishing.
+            Configure landing content (optional) before publishing.
           </p>
         </div>
         <div className="create-tenant-header-actions">
@@ -432,7 +471,10 @@ export default function CreateTenantPage() {
         <div className="card create-tenant-card">
           <h2>Tenant created</h2>
           <p className="muted">
-            {createdTenant.name} is ready. Share the landing and start collecting leads.
+            {createdTenant.name} is ready.{" "}
+            {isExternalWebsite
+              ? "External website mode is enabled."
+              : "Share the landing and start collecting leads."}
           </p>
           <div className="create-preview-list">
             <div>
@@ -562,12 +604,35 @@ export default function CreateTenantPage() {
                     <option value="archived">Archived</option>
                   </select>
                 </label>
+                <label className="field">
+                  <span>Website mode</span>
+                  <select
+                    value={draft.websiteMode}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        websiteMode: event.target.value as LandingDraft["websiteMode"]
+                      }))
+                    }
+                  >
+                    <option value="landing">Use Uni-Leads landing page</option>
+                    <option value="external">
+                      Client has own website (external marketing site)
+                    </option>
+                  </select>
+                </label>
               </div>
             </div>
           )}
 
           {step === 2 && (
             <div className="create-step-body">
+              {isExternalWebsite && (
+                <div className="notice">
+                  External website mode selected. Landing fields are optional and
+                  can be skipped.
+                </div>
+              )}
               <div className="create-grid">
                 <label className="field">
                   <span>Headline (H1)</span>
@@ -578,7 +643,7 @@ export default function CreateTenantPage() {
                       setDraft((prev) => ({ ...prev, headline: event.target.value }))
                     }
                     placeholder="Premium stays for focused students"
-                    required
+                    required={!isExternalWebsite}
                   />
                 </label>
                 <label className="field">
@@ -590,7 +655,7 @@ export default function CreateTenantPage() {
                       setDraft((prev) => ({ ...prev, subheadline: event.target.value }))
                     }
                     placeholder="Safe, calm, and just minutes from coaching."
-                    required
+                    required={!isExternalWebsite}
                   />
                 </label>
               </div>
@@ -696,6 +761,11 @@ export default function CreateTenantPage() {
 
           {step === 3 && (
             <div className="create-step-body">
+              {isExternalWebsite && (
+                <div className="notice">
+                  External website mode selected. Trust sections are optional.
+                </div>
+              )}
               <div className="create-section">
                 <div className="section-title">Why choose us</div>
                 <div className="create-grid">
@@ -824,34 +894,45 @@ export default function CreateTenantPage() {
                       <strong>Status</strong>
                       <p className="muted">{draft.status || "-"}</p>
                     </div>
+                    <div>
+                      <strong>Website mode</strong>
+                      <p className="muted">{websiteModeLabel}</p>
+                    </div>
                   </div>
                 </div>
                 <div>
                   <div className="section-title">Landing preview</div>
-                  <div className="create-preview-list">
-                    <div>
-                      <strong>Headline</strong>
-                      <p className="muted">{draft.headline || "-"}</p>
+                  {isExternalWebsite ? (
+                    <div className="notice">
+                      External website mode selected. Landing content can be configured
+                      later if needed.
                     </div>
-                    <div>
-                      <strong>Subheadline</strong>
-                      <p className="muted">{draft.subheadline || "-"}</p>
+                  ) : (
+                    <div className="create-preview-list">
+                      <div>
+                        <strong>Headline</strong>
+                        <p className="muted">{draft.headline || "-"}</p>
+                      </div>
+                      <div>
+                        <strong>Subheadline</strong>
+                        <p className="muted">{draft.subheadline || "-"}</p>
+                      </div>
+                      <div>
+                        <strong>Primary CTA</strong>
+                        <p className="muted">
+                          {draft.primaryCtaType} - {primaryPreviewLabel}
+                        </p>
+                      </div>
+                      <div>
+                        <strong>Phone</strong>
+                        <p className="muted">{draft.phoneNumber || "-"}</p>
+                      </div>
+                      <div>
+                        <strong>WhatsApp</strong>
+                        <p className="muted">{draft.whatsappNumber || "-"}</p>
+                      </div>
                     </div>
-                    <div>
-                      <strong>Primary CTA</strong>
-                      <p className="muted">
-                        {draft.primaryCtaType} - {primaryPreviewLabel}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Phone</strong>
-                      <p className="muted">{draft.phoneNumber || "-"}</p>
-                    </div>
-                    <div>
-                      <strong>WhatsApp</strong>
-                      <p className="muted">{draft.whatsappNumber || "-"}</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
               <div className="notice">

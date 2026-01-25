@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 
 type LeadSubmitPayload = {
   slug?: string;
+  identity_type?: string;
+  identity_value?: string;
   contact?: Record<string, unknown>;
   form_payload?: Record<string, unknown>;
   source?: string;
@@ -25,8 +27,22 @@ export async function POST(req: Request) {
     payload = null;
   }
 
-  if (!payload?.slug) {
-    return NextResponse.json({ error: "Missing tenant slug." }, { status: 400 });
+  const identityTypeRaw = payload?.identity_type ?? "slug";
+  const identityType = identityTypeRaw.trim().toLowerCase();
+  const identityValue = payload?.identity_value ?? payload?.slug;
+
+  if (!identityValue) {
+    return NextResponse.json(
+      { error: "Missing tenant identity value." },
+      { status: 400 }
+    );
+  }
+
+  if (identityType !== "slug" && identityType !== "domain") {
+    return NextResponse.json(
+      { error: "Invalid identity_type. Use 'slug' or 'domain'." },
+      { status: 400 }
+    );
   }
 
   const supabaseUrl = getSupabaseUrl();
@@ -45,8 +61,8 @@ export async function POST(req: Request) {
   const { data, error: submitError } = await supabase
     .schema("public")
     .rpc("submit_lead", {
-      p_identity_type: "slug",
-      p_identity_value: payload.slug,
+      p_identity_type: identityType,
+      p_identity_value: identityValue,
       p_contact: payload.contact ?? {},
       p_form_payload: payload.form_payload ?? {},
       p_source: payload.source ?? "landing",

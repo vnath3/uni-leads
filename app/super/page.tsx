@@ -240,6 +240,15 @@ export default function SuperDashboardPage() {
   const [domainErrorByTenant, setDomainErrorByTenant] = useState<
     Record<string, string>
   >({});
+  const [marketingUrlByTenant, setMarketingUrlByTenant] = useState<
+    Record<string, string | null>
+  >({});
+  const [marketingUrlBusyByTenant, setMarketingUrlBusyByTenant] = useState<
+    Record<string, boolean>
+  >({});
+  const [marketingUrlErrorByTenant, setMarketingUrlErrorByTenant] = useState<
+    Record<string, string>
+  >({});
   const [archiveInputByTenant, setArchiveInputByTenant] = useState<
     Record<string, string>
   >({});
@@ -535,6 +544,51 @@ export default function SuperDashboardPage() {
       setActiveDrawerSection("overview");
     }
   }, [drawerOpen, selectedTenant]);
+
+  useEffect(() => {
+    if (!drawerOpen || !selectedTenantId) return;
+    if (Object.prototype.hasOwnProperty.call(marketingUrlByTenant, selectedTenantId)) {
+      return;
+    }
+
+    let active = true;
+    setMarketingUrlBusyByTenant((prev) => ({ ...prev, [selectedTenantId]: true }));
+    setMarketingUrlErrorByTenant((prev) => ({ ...prev, [selectedTenantId]: "" }));
+
+    const loadMarketingUrl = async () => {
+      const { data, error: marketingError } = await supabase.rpc(
+        "get_tenant_marketing_site",
+        { p_tenant_id: selectedTenantId }
+      );
+
+      if (!active) return;
+
+      if (marketingError) {
+        setMarketingUrlErrorByTenant((prev) => ({
+          ...prev,
+          [selectedTenantId]: marketingError.message
+        }));
+        setMarketingUrlByTenant((prev) => ({ ...prev, [selectedTenantId]: null }));
+      } else {
+        const value = typeof data === "string" ? data : null;
+        setMarketingUrlByTenant((prev) => ({
+          ...prev,
+          [selectedTenantId]: value?.trim() || null
+        }));
+      }
+
+      setMarketingUrlBusyByTenant((prev) => ({
+        ...prev,
+        [selectedTenantId]: false
+      }));
+    };
+
+    void loadMarketingUrl();
+
+    return () => {
+      active = false;
+    };
+  }, [drawerOpen, selectedTenantId, marketingUrlByTenant]);
 
   const loadTenantStats = async (tenantRows: Tenant[]) => {
     const tenantIds = tenantRows.map((tenant) => tenant.id);
@@ -1843,6 +1897,9 @@ export default function SuperDashboardPage() {
           const domainInput = domainInputByTenant[tenant.id] ?? "";
           const domainBusy = !!domainBusyByTenant[tenant.id];
           const domainError = domainErrorByTenant[tenant.id];
+          const marketingUrl = marketingUrlByTenant[tenant.id] ?? null;
+          const marketingBusy = !!marketingUrlBusyByTenant[tenant.id];
+          const marketingError = marketingUrlErrorByTenant[tenant.id];
           const archiveInput = archiveInputByTenant[tenant.id] ?? "";
           const archiveBusy = !!archiveBusyByTenant[tenant.id];
           const archiveError = archiveErrorByTenant[tenant.id];
@@ -2023,6 +2080,44 @@ export default function SuperDashboardPage() {
                           {formatRelativeTime(lastActivity)}
                         </span>
                       </p>
+                      <div className="drawer-subsection">
+                        <div className="drawer-subtitle">Marketing site</div>
+                        {marketingBusy ? (
+                          <p className="muted">Loading marketing URL...</p>
+                        ) : marketingUrl ? (
+                          <>
+                            <p className="muted">{marketingUrl}</p>
+                            <div className="drawer-actions">
+                              <a
+                                className="button secondary"
+                                href={marketingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Open site
+                              </a>
+                              <button
+                                type="button"
+                                className="button secondary"
+                                onClick={() =>
+                                  handleCopyLink(
+                                    tenant.id,
+                                    "Marketing site link",
+                                    marketingUrl
+                                  )
+                                }
+                              >
+                                Copy link
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <p className="muted">No marketing site URL on file.</p>
+                        )}
+                        {marketingError && (
+                          <div className="error">{marketingError}</div>
+                        )}
+                      </div>
                     </div>
                   </details>
 

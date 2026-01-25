@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useTenantContext } from "@/components/TenantContextProvider";
 import BusinessProfileBanner from "@/components/BusinessProfileBanner";
@@ -13,6 +13,7 @@ type LandingSettings = {
   contact_email?: string | null;
   contact_phone?: string | null;
   address?: string | null;
+  marketing_site_url?: string | null;
 };
 
 type FormState = {
@@ -22,6 +23,7 @@ type FormState = {
   contact_email: string;
   address: string;
   primary_color: string;
+  marketing_site_url: string;
 };
 
 const emptyForm: FormState = {
@@ -30,7 +32,8 @@ const emptyForm: FormState = {
   contact_phone: "",
   contact_email: "",
   address: "",
-  primary_color: ""
+  primary_color: "",
+  marketing_site_url: ""
 };
 
 export default function TenantSettingsPage() {
@@ -42,7 +45,32 @@ export default function TenantSettingsPage() {
   const [formState, setFormState] = useState(emptyForm);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const canEdit = isOwnerAdmin && canWrite;
+  const embedPayload = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          identity_type: "slug",
+          identity_value: tenant.slug,
+          contact: {
+            full_name: "Jane Doe",
+            phone: "+91 98xxxxxx",
+            email: "jane@example.com"
+          },
+          form_payload: {
+            full_name: "Jane Doe",
+            phone: "+91 98xxxxxx",
+            source_page: "https://example.com/landing"
+          },
+          source: "website",
+          campaign: "meta-ads"
+        },
+        null,
+        2
+      ),
+    [tenant.slug]
+  );
+
+  const canEdit = isOwnerAdmin || (tenant.isPlatformUser && canWrite);
 
   useEffect(() => {
     let active = true;
@@ -54,7 +82,7 @@ export default function TenantSettingsPage() {
       const { data, error: settingsError } = await supabase
         .from("landing_settings")
         .select(
-          "brand_name, tagline, logo_url, primary_color, contact_email, contact_phone, address"
+          "brand_name, tagline, logo_url, primary_color, contact_email, contact_phone, address, marketing_site_url"
         )
         .eq("tenant_id", tenant.tenantId)
         .maybeSingle();
@@ -80,7 +108,8 @@ export default function TenantSettingsPage() {
         contact_phone: settings?.contact_phone ?? "",
         contact_email: settings?.contact_email ?? "",
         address: settings?.address ?? "",
-        primary_color: settings?.primary_color ?? ""
+        primary_color: settings?.primary_color ?? "",
+        marketing_site_url: settings?.marketing_site_url ?? ""
       });
       setLoading(false);
     };
@@ -110,7 +139,8 @@ export default function TenantSettingsPage() {
       contact_phone: formState.contact_phone.trim() || null,
       contact_email: formState.contact_email.trim() || null,
       address: formState.address.trim() || null,
-      primary_color: formState.primary_color.trim() || null
+      primary_color: formState.primary_color.trim() || null,
+      marketing_site_url: formState.marketing_site_url.trim() || null
     };
 
     const { data, error: updateError } = await supabase
@@ -118,7 +148,7 @@ export default function TenantSettingsPage() {
       .update(payload)
       .eq("tenant_id", tenant.tenantId)
       .select(
-        "brand_name, tagline, logo_url, primary_color, contact_email, contact_phone, address"
+        "brand_name, tagline, logo_url, primary_color, contact_email, contact_phone, address, marketing_site_url"
       )
       .maybeSingle();
 
@@ -141,7 +171,8 @@ export default function TenantSettingsPage() {
       contact_phone: updated?.contact_phone ?? "",
       contact_email: updated?.contact_email ?? "",
       address: updated?.address ?? "",
-      primary_color: updated?.primary_color ?? ""
+      primary_color: updated?.primary_color ?? "",
+      marketing_site_url: updated?.marketing_site_url ?? ""
     });
     setNotice("Business profile saved.");
     setSaving(false);
@@ -240,6 +271,18 @@ export default function TenantSettingsPage() {
             />
           </label>
           <label className="field">
+            <span>Marketing site URL</span>
+            <input
+              type="url"
+              value={formState.marketing_site_url}
+              onChange={(event) =>
+                handleChange("marketing_site_url", event.target.value)
+              }
+              placeholder="https://jyotipg.netlify.app/"
+              disabled={!canEdit}
+            />
+          </label>
+          <label className="field">
             <span>Primary color</span>
             <input
               type="text"
@@ -264,6 +307,31 @@ export default function TenantSettingsPage() {
             {saving ? "Saving..." : "Save changes"}
           </button>
         </form>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h1>Embed / integrate form</h1>
+            <p className="muted">
+              Use this payload to post leads directly to Uni-Leads.
+            </p>
+          </div>
+        </div>
+        <div className="create-preview-list">
+          <div>
+            <strong>Tenant slug</strong>
+            <p className="muted">{tenant.slug}</p>
+          </div>
+          <div>
+            <strong>Submit endpoint</strong>
+            <p className="muted">/api/lead-submit</p>
+          </div>
+        </div>
+        <label className="field">
+          <span>Example JSON payload</span>
+          <textarea rows={12} value={embedPayload} readOnly />
+        </label>
       </div>
     </>
   );
