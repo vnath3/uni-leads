@@ -18,17 +18,6 @@ type SupportContext = {
   userId: string | null;
 };
 
-const toSupportMode = (value?: string | null): SupportMode => {
-  const normalized = (value ?? "").toLowerCase();
-  if (normalized.includes("rw") || normalized.includes("write")) {
-    return "rw";
-  }
-  if (normalized.includes("ro") || normalized.includes("read")) {
-    return "ro";
-  }
-  return "none";
-};
-
 const isRlsError = (error: { code?: string; message?: string } | null) => {
   if (!error) return false;
   if (error.code === "42501") return true;
@@ -63,23 +52,8 @@ const getSupportContextForTenant = async (
     return { supportMode: "none", isPlatformUser: false, userId };
   }
 
-  const nowIso = new Date().toISOString();
-  const { data: grants, error: grantError } = await supabase
-    .from("support_access_grants")
-    .select("access_mode, status, expires_at")
-    .eq("tenant_id", tenantId)
-    .eq("platform_user_id", userId)
-    .eq("status", "active")
-    .gt("expires_at", nowIso)
-    .order("expires_at", { ascending: false })
-    .limit(1);
-
-  if (grantError || !grants?.length) {
-    return { supportMode: "none", isPlatformUser: true, userId };
-  }
-
   return {
-    supportMode: toSupportMode(grants[0]?.access_mode),
+    supportMode: "rw",
     isPlatformUser: true,
     userId
   };

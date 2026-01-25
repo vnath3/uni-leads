@@ -10,6 +10,7 @@ Universal lead capture, multi-tenant.
 ## Documentation
 - Product and engineering overview: `docs/PROJECT_OVERVIEW.md`.
 - Database guide and query rules: `docs/db.md`.
+- Client onboarding (landing vs external site): `docs/CLIENT_ONBOARDING.md`.
 
 ## Development
 - `npm run dev`

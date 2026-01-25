@@ -10,6 +10,22 @@ export const requireTenantAccess = async (
   supabase: SupabaseClient,
   tenantId: string
 ): Promise<boolean> => {
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (!sessionError && sessionData.session?.user?.id) {
+    const { data: platformUser, error: platformError } = await supabase
+      .from("platform_users")
+      .select("user_id, is_active")
+      .eq("user_id", sessionData.session.user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!platformError && platformUser?.is_active) {
+      return true;
+    }
+  }
+
   const { error } = await supabase
     .from("tenant_features")
     .select("tenant_id")
