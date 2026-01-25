@@ -58,15 +58,16 @@ export async function POST(req: Request) {
     auth: { persistSession: false }
   });
 
+  const safePayload = payload ?? {};
   const { data, error: submitError } = await supabase
     .schema("public")
     .rpc("submit_lead", {
       p_identity_type: identityType,
       p_identity_value: identityValue,
-      p_contact: payload.contact ?? {},
-      p_form_payload: payload.form_payload ?? {},
-      p_source: payload.source ?? "landing",
-      p_campaign: payload.campaign ?? null
+      p_contact: safePayload.contact ?? {},
+      p_form_payload: safePayload.form_payload ?? {},
+      p_source: safePayload.source ?? "landing",
+      p_campaign: safePayload.campaign ?? null
     });
 
   if (submitError) {
