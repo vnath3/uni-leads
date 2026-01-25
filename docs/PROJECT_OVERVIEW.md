@@ -11,6 +11,7 @@ clinic appointments, and automations.
 - Supabase Postgres with RLS; browser uses `@supabase/supabase-js`.
 - Supabase Edge Functions (Deno) for scheduled automations and instant lead follow-up.
 - Netlify deployment via the Next.js plugin.
+- Middleware resolves custom domains via `resolve_tenant_domain` and redirects to canonical routes.
 
 ## Key user flows
 ### Public lead capture (tenant landing)
@@ -22,12 +23,16 @@ clinic appointments, and automations.
 - Rate limiting is enforced inside `submit_lead` using `lead_rate_limits`.
 - After submit, `/api/lead-submit` optionally triggers edge function
   `run-lead-instant-message` if `SUPABASE_SERVICE_ROLE_KEY` is configured.
+- Custom domains are resolved with `resolve_tenant_domain` in `middleware.ts` and
+  rewritten to `/t/[slug]`; admin routes redirect to the app host.
 
 ### Super admin (platform operator)
 - Routes: `/login` and `/super`.
 - Access gate: `platform_users` row with `is_active=true`.
 - Capabilities: list tenants, search by name or slug, create tenants via
   `/super/create-tenant`, toggle features, request or revoke support access,
+  manage domains, generate invite links, edit landing config
+  (`/super/tenants/[tenant_id]/landing`), archive or hard delete tenants,
   copy landing or admin links.
 
 ### Tenant admin (client operator)
@@ -35,12 +40,20 @@ clinic appointments, and automations.
 - Access gate: tenant membership in `tenant_members` or an active support grant
   in `support_access_grants`.
 - Uses `TenantContextProvider` to share tenant id, enabled features, and support mode.
+- Business profile settings live at `/t/[slug]/admin/settings`.
+
+### Tenant invite claim
+- Route: `/claim?token=...`.
+- Claims are processed by `public.claim_tenant_invite(p_token)` and redirect to
+  `/t/[slug]/admin`.
+- Unauthenticated users are redirected to `/login?redirect=...` before claiming.
 
 ## Feature modules and routes
 - Core overview, contacts, and leads: `/t/[slug]/admin`.
 - Audit log: `/t/[slug]/admin/audit`.
 - Automations: `/t/[slug]/admin/automations`.
 - Outbox: `/t/[slug]/admin/outbox`.
+- Settings (business profile): `/t/[slug]/admin/settings`.
 - PG operations:
   - Beds and rooms: `/t/[slug]/admin/pg/beds`
   - Occupancy: `/t/[slug]/admin/pg/occupancy`
@@ -63,7 +76,7 @@ clinic appointments, and automations.
 ## Database highlights
 See `docs/db.md` for the full schema guide and query conventions. Notable tables:
 - Tenancy and access: `tenants`, `tenant_identities`, `tenant_members`,
-  `platform_users`, `support_access_grants`.
+  `platform_users`, `support_access_grants`, `tenant_invites`.
 - Feature flags: `features`, `tenant_features`.
 - Leads and contacts: `contacts`, `leads`, `landing_settings`.
 - PG module: `pg_rooms`, `pg_beds`, `pg_occupancies`, `pg_payments`.
@@ -83,6 +96,7 @@ See `docs/db.md` for the full schema guide and query conventions. Notable tables
 - Node version: 18 to 20 (see `package.json` engines and `.nvmrc`).
 - Scripts: `npm run dev`, `npm run build`, `npm run start`.
 - Required env vars:
+  - Routing: `NEXT_PUBLIC_APP_URL` (canonical app host for domain redirects).
   - Browser and app: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
   - Server route: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (falls back to NEXT_PUBLIC)
     and optional `SUPABASE_SERVICE_ROLE_KEY` for instant messaging.
@@ -106,6 +120,11 @@ SQL checks for duplicate dues and outbox idempotency keys live in `README.md`.
   assumed to exist in Supabase (see `docs/db.md`).
 
 ## Whats New (append entries here)
+### 2026-01-16
+- Added: tenant invite flow with `/claim` and `tenant_invites`.
+- Added: custom domain routing + management (`resolve_tenant_domain`, add/remove).
+- Added: tenant archive + hard delete actions in `/super`.
+- Added: super admin landing editor (`/super/tenants/[tenant_id]/landing`).
 ### 2026-01-18
 - Added: `/super/create-tenant` multi-step flow to configure landing content at creation time.
 - Changed: `create_tenant_full` accepts optional landing content and trust points.
