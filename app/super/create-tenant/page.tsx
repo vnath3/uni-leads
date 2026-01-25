@@ -239,6 +239,10 @@ export default function CreateTenantPage() {
         setError(message);
         return;
       }
+      if (draft.websiteMode === "external") {
+        setStep(4);
+        return;
+      }
     }
     setStep((prev) => (prev < 4 ? ((prev + 1) as 1 | 2 | 3 | 4) : prev));
   };
@@ -545,6 +549,43 @@ export default function CreateTenantPage() {
             ))}
           </div>
 
+          <div className="create-section">
+            <div className="section-title">Website mode</div>
+            <div className="create-grid">
+              <label className="field">
+                <span>Website mode</span>
+                <select
+                  value={draft.websiteMode}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      websiteMode: event.target.value as LandingDraft["websiteMode"]
+                    }))
+                  }
+                >
+                  <option value="landing">Use Uni-Leads landing page</option>
+                  <option value="external">
+                    Client has own website (external marketing site)
+                  </option>
+                </select>
+              </label>
+            </div>
+            {isExternalWebsite && step < 4 && (
+              <div className="create-actions">
+                <span className="muted">
+                  Landing steps will be skipped for external website mode.
+                </span>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setStep(4)}
+                >
+                  Skip to review
+                </button>
+              </div>
+            )}
+          </div>
+
           {step === 1 && (
             <div className="create-step-body">
               <div className="create-grid">
@@ -602,23 +643,6 @@ export default function CreateTenantPage() {
                     <option value="active">Active</option>
                     <option value="paused">Paused</option>
                     <option value="archived">Archived</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Website mode</span>
-                  <select
-                    value={draft.websiteMode}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        websiteMode: event.target.value as LandingDraft["websiteMode"]
-                      }))
-                    }
-                  >
-                    <option value="landing">Use Uni-Leads landing page</option>
-                    <option value="external">
-                      Client has own website (external marketing site)
-                    </option>
                   </select>
                 </label>
               </div>
